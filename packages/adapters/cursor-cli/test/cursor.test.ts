@@ -11,6 +11,7 @@ import { CursorAdapter, CursorSession } from "../src/adapter.js";
 import { CursorTransport, type CursorCallbacks } from "../src/transport.js";
 import {
   cursorCatalog,
+  cursorInspectCatalog,
   cursorModelRef,
   cursorNativeModel,
   cursorSessionConfiguration,
@@ -206,7 +207,7 @@ describe("Cursor native configuration", () => {
         .effectiveThinkingOptionId,
     ).toBe("g.fast~false.reasoning~medium");
   });
-  it("inspects the session/new catalog without configuring other models", async () => {
+  it("discovers per-model Thinking options during inspect", async () => {
     const parameterized = {
       sessionId: info.sessionId,
       configOptions: [
@@ -214,17 +215,23 @@ describe("Cursor native configuration", () => {
           id: "model",
           name: "Model",
           type: "select" as const,
-          currentValue: "gpt-5.6-sol",
+          currentValue: "default",
           options: [
             { value: "default", name: "Auto" },
             { value: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
             { value: "composer-2.5", name: "Composer 2.5" },
           ],
         },
+      ],
+    };
+    const byModel: Record<string, unknown[]> = {
+      default: parameterized.configOptions,
+      "gpt-5.6-sol": [
+        parameterized.configOptions[0],
         {
           id: "reasoning",
           name: "Reasoning",
-          type: "select" as const,
+          type: "select",
           currentValue: "medium",
           options: [
             { value: "medium", name: "Medium" },
@@ -234,7 +241,20 @@ describe("Cursor native configuration", () => {
         {
           id: "fast",
           name: "Fast",
-          type: "select" as const,
+          type: "select",
+          currentValue: "false",
+          options: [
+            { value: "false", name: "Off" },
+            { value: "true", name: "Fast" },
+          ],
+        },
+      ],
+      "composer-2.5": [
+        parameterized.configOptions[0],
+        {
+          id: "fast",
+          name: "Fast",
+          type: "select",
           currentValue: "false",
           options: [
             { value: "false", name: "Off" },
@@ -243,51 +263,18 @@ describe("Cursor native configuration", () => {
         },
       ],
     };
-    const configure = vi.spyOn(CursorTransport.prototype, "configure");
-    vi.spyOn(CursorTransport.prototype, "open").mockResolvedValue(parameterized);
-    vi.spyOn(CursorTransport.prototype, "close").mockResolvedValue();
-    const adapter = new CursorAdapter();
-    try {
-      const inspection = await adapter.inspect();
-      expect(configure).not.toHaveBeenCalled();
-      expect(inspection).toMatchObject({ status: "ready" });
-      if (inspection.status !== "ready") throw new Error("expected a ready inspection");
-      expect(inspection.catalog.models.map((model) => model.label)).toEqual([
-        "Auto",
-        "GPT-5.6 Sol",
-        "Composer 2.5",
-      ]);
-      expect(
-        inspection.catalog.models.find((model) => model.label === "GPT-5.6 Sol")
-          ?.supportedThinkingOptionIds,
-      ).toHaveLength(4);
-      expect(
-        inspection.catalog.models.find((model) => model.label === "Composer 2.5")
-          ?.supportedThinkingOptionIds,
-      ).toBeUndefined();
-    } finally {
-      await adapter.close();
-    }
-  });
-  it("reuses an open session for inspect instead of starting a throwaway process", async () => {
-    const open = vi.spyOn(CursorTransport.prototype, "open").mockImplementation(async function (
-      this: CursorTransport,
-    ) {
-      this.sessionId = info.sessionId;
-      return info;
-    });
-    vi.spyOn(CursorTransport.prototype, "close").mockResolvedValue();
-    const adapter = new CursorAdapter();
-    try {
-      const opened = await adapter.open({ kind: "create", cwd: process.cwd() });
-      expect(opened.ok).toBe(true);
-      const openedCalls = open.mock.calls.length;
-      const inspection = await adapter.inspect({ cwd: process.cwd() });
-      expect(open).toHaveBeenCalledTimes(openedCalls);
-      expect(inspection.status).toBe("ready");
-    } finally {
-      await adapter.close();
-    }
+    const catalog = await cursorInspectCatalog(parameterized, async (_id, value) => ({
+      configOptions: byModel[value] ?? parameterized.configOptions,
+    }));
+    expect(
+      catalog.models.find((model) => model.label === "GPT-5.6 Sol")?.supportedThinkingOptionIds,
+    ).toHaveLength(4);
+    expect(
+      catalog.models.find((model) => model.label === "Composer 2.5")?.supportedThinkingOptionIds,
+    ).toEqual(["g.fast~false", "g.fast~true"]);
+    expect(
+      catalog.models.find((model) => model.label === "Auto")?.supportedThinkingOptionIds,
+    ).toBeUndefined();
   });
   it("selects Fast and Reasoning independently through Thinking commands", async () => {
     const parameterized = {
