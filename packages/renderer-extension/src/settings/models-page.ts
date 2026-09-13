@@ -110,6 +110,7 @@ export function createModelsSettingsPage(
       };
 
       void load();
+      return undefined;
     },
   });
 }
