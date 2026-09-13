@@ -11,7 +11,6 @@ import { CursorAdapter, CursorSession } from "../src/adapter.js";
 import { CursorTransport, type CursorCallbacks } from "../src/transport.js";
 import {
   cursorCatalog,
-  cursorInspectCatalog,
   cursorModelRef,
   cursorNativeModel,
   cursorSessionConfiguration,
@@ -91,23 +90,22 @@ afterEach(() => {
 describe("Cursor native configuration", () => {
   it("starts inspection cache expiry at completion, including slow native startup", async () => {
     const clock = vi.spyOn(Date, "now").mockReturnValue(0),
-      gate = Promise.withResolvers<typeof info>();
-    const open = vi.spyOn(CursorTransport.prototype, "open").mockImplementation(() => gate.promise);
-    vi.spyOn(CursorTransport.prototype, "close").mockResolvedValue();
-    const adapter = new CursorAdapter();
+      gate = Promise.withResolvers<string>();
+    const listModels = vi.fn(() => gate.promise);
+    const adapter = new CursorAdapter({ listModels });
     try {
       const first = adapter.inspect();
       clock.mockReturnValue(400_000);
-      gate.resolve(info);
+      gate.resolve("auto - Auto (default)\n");
       await first;
       await adapter.inspect();
-      expect(open).toHaveBeenCalledTimes(1);
+      expect(listModels).toHaveBeenCalledTimes(1);
       clock.mockReturnValue(699_999);
       await adapter.inspect();
-      expect(open).toHaveBeenCalledTimes(1);
+      expect(listModels).toHaveBeenCalledTimes(1);
       clock.mockReturnValue(700_001);
       await adapter.inspect();
-      expect(open).toHaveBeenCalledTimes(1);
+      expect(listModels).toHaveBeenCalledTimes(2);
     } finally {
       await adapter.close();
     }
@@ -207,74 +205,25 @@ describe("Cursor native configuration", () => {
         .effectiveThinkingOptionId,
     ).toBe("g.fast~false.reasoning~medium");
   });
-  it("discovers per-model Thinking options during inspect", async () => {
-    const parameterized = {
-      sessionId: info.sessionId,
-      configOptions: [
-        {
-          id: "model",
-          name: "Model",
-          type: "select" as const,
-          currentValue: "default",
-          options: [
-            { value: "default", name: "Auto" },
-            { value: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
-            { value: "composer-2.5", name: "Composer 2.5" },
-          ],
-        },
-      ],
-    };
-    const byModel: Record<string, unknown[]> = {
-      default: parameterized.configOptions,
-      "gpt-5.6-sol": [
-        parameterized.configOptions[0],
-        {
-          id: "reasoning",
-          name: "Reasoning",
-          type: "select",
-          currentValue: "medium",
-          options: [
-            { value: "medium", name: "Medium" },
-            { value: "high", name: "High" },
-          ],
-        },
-        {
-          id: "fast",
-          name: "Fast",
-          type: "select",
-          currentValue: "false",
-          options: [
-            { value: "false", name: "Off" },
-            { value: "true", name: "Fast" },
-          ],
-        },
-      ],
-      "composer-2.5": [
-        parameterized.configOptions[0],
-        {
-          id: "fast",
-          name: "Fast",
-          type: "select",
-          currentValue: "false",
-          options: [
-            { value: "false", name: "Off" },
-            { value: "true", name: "Fast" },
-          ],
-        },
-      ],
-    };
-    const catalog = await cursorInspectCatalog(parameterized, async (_id, value) => ({
-      configOptions: byModel[value] ?? parameterized.configOptions,
-    }));
-    expect(
-      catalog.models.find((model) => model.label === "GPT-5.6 Sol")?.supportedThinkingOptionIds,
-    ).toHaveLength(4);
-    expect(
-      catalog.models.find((model) => model.label === "Composer 2.5")?.supportedThinkingOptionIds,
-    ).toEqual(["g.fast~false", "g.fast~true"]);
-    expect(
-      catalog.models.find((model) => model.label === "Auto")?.supportedThinkingOptionIds,
-    ).toBeUndefined();
+  it("inspects --list-models without opening an ACP session", async () => {
+    const open = vi.spyOn(CursorTransport.prototype, "open");
+    const adapter = new CursorAdapter({
+      listModels: async () =>
+        "auto - Auto (default)\ncomposer-2.5 - Composer 2.5\ncomposer-2.5-fast - Composer 2.5 Fast\n",
+    });
+    try {
+      const inspection = await adapter.inspect();
+      expect(open).not.toHaveBeenCalled();
+      expect(inspection.status).toBe("ready");
+      if (inspection.status !== "ready") throw new Error("expected a ready inspection");
+      expect(inspection.catalog.models.map((model) => model.label)).toEqual(["Auto", "Composer 2.5"]);
+      expect(
+        inspection.catalog.models.find((model) => model.label === "Composer 2.5")
+          ?.supportedThinkingOptionIds,
+      ).toEqual(["g.fast~false", "g.fast~true"]);
+    } finally {
+      await adapter.close();
+    }
   });
   it("selects Fast and Reasoning independently through Thinking commands", async () => {
     const parameterized = {
@@ -333,37 +282,17 @@ describe("Cursor native configuration", () => {
     expect(current).toMatchObject({ fast: "true", reasoning: "high" });
     await session.close();
   });
-  it("keeps a dedicated inspect process started at Adapter construction", async () => {
-    const open = vi.spyOn(CursorTransport.prototype, "open").mockImplementation(async function (
-      this: CursorTransport,
-    ) {
-      this.sessionId = info.sessionId;
-      return info;
-    });
-    const close = vi.spyOn(CursorTransport.prototype, "close").mockResolvedValue();
-    const adapter = new CursorAdapter();
-    try {
-      await adapter.inspect();
-      await adapter.inspect();
-      expect(open).toHaveBeenCalledTimes(1);
-      expect(close).not.toHaveBeenCalled();
-    } finally {
-      await adapter.close();
-    }
-    expect(close).toHaveBeenCalled();
-  });
   it("caches failed inspection and retries only on explicit refresh or expiry", async () => {
-    const open = vi
-      .spyOn(CursorTransport.prototype, "open")
-      .mockRejectedValue(new Error("not logged in"));
-    vi.spyOn(CursorTransport.prototype, "close").mockResolvedValue();
-    const adapter = new CursorAdapter();
+    const listModels = vi.fn(async () => {
+      throw new Error("not logged in");
+    });
+    const adapter = new CursorAdapter({ listModels });
     const first = await adapter.inspect();
     expect(harnessInspectionSchema.safeParse(first).success).toBe(true);
     expect(await adapter.inspect()).toEqual(first);
-    expect(open).toHaveBeenCalledTimes(1);
+    expect(listModels).toHaveBeenCalledTimes(1);
     await adapter.inspect({ refresh: true });
-    expect(open).toHaveBeenCalledTimes(2);
+    expect(listModels).toHaveBeenCalledTimes(2);
     await adapter.close();
   });
   it("does not claim unconfirmed mode selection", async () => {

@@ -37,7 +37,6 @@ import {
 import {
   CURSOR_MODES,
   cursorCapabilities,
-  cursorInspectCatalog,
   cursorConfigOptions,
   cursorModelRef,
   cursorNativeModel,
@@ -58,11 +57,18 @@ import { CursorTurnOutput, cursorSnapshot } from "./projection.js";
 import { CursorInteractions } from "./interactions.js";
 import { type CursorSubagents, cursorTaskAddress } from "./subagents.js";
 import type { HarnessSubagentCapability } from "@codexhost/harness-adapter";
+import {
+  cursorListModelsVariantKey,
+  parseCursorListModelId,
+  parseCursorListModels,
+  readCursorListModels,
+} from "./list-models.js";
 
 export interface CursorAdapterOptions {
   environment?: NodeJS.ProcessEnv;
   command?: string;
   timeoutMs?: number;
+  listModels?: () => Promise<string>;
 }
 export function cursorError(error: unknown): HarnessError {
   const message = sanitizeDiagnosticTail(
@@ -119,17 +125,9 @@ export class CursorAdapter implements HarnessAdapter {
     string,
     { expires: number; pending: boolean; result: Promise<HarnessInspection> }
   >();
-  #probe:
-    | {
-        cwd: string;
-        transport: CursorTransport;
-        info: CursorSessionInfo;
-      }
-    | undefined;
+  #variants = new Map<string, string>();
   #closed = false;
-  constructor(readonly options: CursorAdapterOptions = {}) {
-    void this.inspect();
-  }
+  constructor(readonly options: CursorAdapterOptions = {}) {}
   transportOptions(cwd: string, environment?: NodeJS.ProcessEnv): CursorTransportOptions {
     return {
       cwd: path.resolve(cwd),
@@ -137,11 +135,6 @@ export class CursorAdapter implements HarnessAdapter {
       ...(this.options.command ? { command: this.options.command } : {}),
       ...(this.options.timeoutMs ? { timeoutMs: this.options.timeoutMs } : {}),
     };
-  }
-  async #closeProbe(): Promise<void> {
-    const probe = this.#probe;
-    this.#probe = undefined;
-    if (probe) await probe.transport.close();
   }
   async inspect(input: InspectHarnessInput = {}): Promise<HarnessInspection> {
     if (this.#closed)
@@ -155,28 +148,15 @@ export class CursorAdapter implements HarnessAdapter {
       return cached.result;
     const result = (async (): Promise<HarnessInspection> => {
       try {
-        if (!this.#probe || path.resolve(this.#probe.cwd) !== cwd) {
-          await this.#closeProbe();
-          const transport = new CursorTransport(this.transportOptions(cwd));
-          try {
-            const info = await transport.open();
-            this.#probe = { cwd, transport, info };
-          } catch (error) {
-            await transport.close();
-            throw error;
-          }
-        }
-        const { transport, info } = this.#probe;
-        const catalog = await cursorInspectCatalog(info, (configId, value) =>
-          transport.configure(configId, value),
-        );
+        const text = this.options.listModels
+          ? await this.options.listModels()
+          : await readCursorListModels(this.transportOptions(cwd));
+        const parsed = parseCursorListModels(text);
+        this.#variants = parsed.variants;
         return {
           status: "ready",
-          catalog,
-          capabilities: cursorCapabilities(
-            catalog.thinkingOptions.length > 0 ||
-              cursorModels(info).models.some((model) => !model.value.includes("[")),
-          ),
+          catalog: parsed.catalog,
+          capabilities: cursorCapabilities(parsed.catalog.thinkingOptions.length > 0),
           permissionModes: CURSOR_MODES,
         };
       } catch (error) {
@@ -219,6 +199,7 @@ export class CursorAdapter implements HarnessAdapter {
           this.#sessions.delete(session);
         },
         input.kind === "create",
+        this.#variants,
       );
       if (input.kind === "resume") {
         const native = readCursorNativeTurns(transport.sessionId, options.cwd, options.environment);
@@ -277,7 +258,6 @@ export class CursorAdapter implements HarnessAdapter {
   async close() {
     this.#closed = true;
     await Promise.allSettled([...this.#sessions].map((session) => session.close()));
-    await this.#closeProbe();
     await Promise.allSettled(
       [...this.#inspections.values()].map((inspection) => inspection.result),
     );
@@ -314,6 +294,7 @@ export class CursorSession implements HarnessSession {
     readonly info: CursorSessionInfo,
     readonly onClose: () => void,
     created = true,
+    readonly variants = new Map<string, string>(),
   ) {
     this.#fresh = created;
     this.#configOptions = info.configOptions;
@@ -444,30 +425,53 @@ export class CursorSession implements HarnessSession {
       if (command.type === "thinking.select") {
         const selections = decodeGroupedThinkingOptionId(command.thinkingOptionId);
         if (!selections) return rejected("invalidRequest", "Unknown Cursor Thinking option");
-        let options = cursorConfigOptions({ configOptions: this.#configOptions });
-        for (const selection of selections) {
-          const result = await this.transport.configure(selection.groupId, selection.optionId);
-          options = cursorConfigOptions(result);
-          if (
-            !options.some(
-              (option) =>
-                option.id === selection.groupId && option.currentValue === selection.optionId,
-            )
-          )
+        const base = this.initialState.effectiveModel
+          ? decodeCursorModelRef(this.initialState.effectiveModel.id)
+          : "";
+        const variant = this.variants.get(
+          cursorListModelsVariantKey(base, command.thinkingOptionId),
+        );
+        if (variant) {
+          const result = await this.transport.configure("model", variant);
+          const options = cursorConfigOptions(result);
+          const current = options.find((option) => option.id === "model")?.currentValue;
+          if (current !== variant && current !== base) {
             throw new Error("Cursor did not confirm configuration selection");
+          }
+          this.#syncConfiguration(options, this.initialState.effectiveModel);
+        } else {
+          let options = cursorConfigOptions({ configOptions: this.#configOptions });
+          for (const selection of selections) {
+            const result = await this.transport.configure(selection.groupId, selection.optionId);
+            options = cursorConfigOptions(result);
+            if (
+              !options.some(
+                (option) =>
+                  option.id === selection.groupId && option.currentValue === selection.optionId,
+              )
+            )
+              throw new Error("Cursor did not confirm configuration selection");
+          }
+          this.#syncConfiguration(options, this.initialState.effectiveModel);
         }
-        this.#syncConfiguration(options, this.initialState.effectiveModel);
       } else {
         const value =
           command.type === "model.select"
-            ? cursorNativeModel({ configOptions: this.#configOptions }, command.model.id)
+            ? this.#nativeSelectValue(command.model.id)
             : command.permissionModeId;
         const configId = command.type === "model.select" ? "model" : "mode";
         if (configId === "mode" && !CURSOR_MODES.modes.some((mode) => mode.id === value))
           return rejected("invalidRequest", "Unknown Cursor execution mode");
         const result = await this.transport.configure(configId, value);
         const options = cursorConfigOptions(result);
-        if (!options.some((option) => option.id === configId && option.currentValue === value))
+        const current = options.find((option) => option.id === configId)?.currentValue;
+        if (
+          current !== value &&
+          !(
+            configId === "model" &&
+            parseCursorListModelId(current ?? "").base === parseCursorListModelId(value).base
+          )
+        )
           throw new Error("Cursor did not confirm configuration selection");
         if (command.type === "model.select") this.#syncConfiguration(options, command.model);
         else {
@@ -485,6 +489,21 @@ export class CursorSession implements HarnessSession {
     } finally {
       this.#configuring = false;
     }
+  }
+  #nativeSelectValue(ref: string): string {
+    let base: string;
+    try {
+      base = cursorNativeModel({ configOptions: this.#configOptions }, ref);
+    } catch {
+      base = decodeCursorModelRef(ref);
+    }
+    return (
+      this.variants.get(
+        cursorListModelsVariantKey(base, this.initialState.effectiveThinkingOptionId),
+      ) ??
+      this.variants.get(cursorListModelsVariantKey(base)) ??
+      base
+    );
   }
   #syncConfiguration(
     options: ReturnType<typeof cursorConfigOptions>,

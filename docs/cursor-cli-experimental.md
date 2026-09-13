@@ -73,13 +73,10 @@ contract investigation before release acceptance.
 - Edit Diff is partial: it requires native ACP diff content. Delete/rename semantics,
   shell edits and missing historical diffs are not inferred. Other Cursor notification
   extensions are not all implemented.
-- Model inspection keeps one dedicated ACP process for reading `session/new`
-  config and walking per-model Fast/thinking options. The Adapter starts that
-  process when it loads so Desktop startup absorbs the walk; switching to Cursor
-  reuses the cached catalog. Conversation Sessions are separate and are not
-  used for inspect. Successful and failed inspection results are cached for five
-  minutes; a later refresh re-walks the dedicated process instead of spawning
-  another throwaway CLI.
+- Model inspection runs native `cursor-agent --list-models` and splits Fast /
+  effort / thinking suffixes into the Host catalog. It does not create an ACP
+  Session. Conversation Sessions still use ACP `session/new` when the user
+  chats. Successful and failed inspection results are cached for five minutes.
 - The native history format and operating-system authentication behavior require
   platform/version acceptance before formal product support is claimed.
 
