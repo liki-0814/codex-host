@@ -299,47 +299,6 @@ export function cursorCatalog(
   return cursorCatalogFromGroups(native, groupsByNativeId);
 }
 
-const INSPECT_WALK_BUDGET_MS = 12_000;
-
-export async function cursorInspectCatalog(
-  info: CursorSessionInfo,
-  configure: (configId: string, value: string) => Promise<{ configOptions?: unknown }>,
-): Promise<HarnessModelCatalog> {
-  const native = cursorModels(info);
-  const currentGroups = cursorParameterGroups(cursorConfigOptions(info));
-  const groupsByNativeId = new Map<string, CursorParameterGroup[]>([
-    [native.current, currentGroups],
-  ]);
-  const parameterized =
-    currentGroups.length > 0 || native.models.some((model) => !model.value.includes("["));
-  if (!parameterized) return cursorCatalogFromGroups(native, groupsByNativeId);
-  const started = Date.now();
-  try {
-    for (const model of native.models) {
-      if (model.value === native.current) continue;
-      if (Date.now() - started > INSPECT_WALK_BUDGET_MS) break;
-      try {
-        const result = await configure("model", model.value);
-        groupsByNativeId.set(
-          model.value,
-          cursorParameterGroups(cursorConfigOptions({ configOptions: result.configOptions })),
-        );
-      } catch {
-        groupsByNativeId.set(model.value, []);
-      }
-    }
-  } finally {
-    if (groupsByNativeId.size > 1) {
-      try {
-        await configure("model", native.current);
-      } catch {
-        // Restore is best-effort so inspect still returns what was collected.
-      }
-    }
-  }
-  return cursorCatalogFromGroups(native, groupsByNativeId);
-}
-
 export function cursorNativeModel(
   info: CursorSessionInfo | { configOptions?: unknown },
   ref: string,

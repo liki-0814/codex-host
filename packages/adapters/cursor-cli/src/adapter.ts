@@ -37,7 +37,7 @@ import {
 import {
   CURSOR_MODES,
   cursorCapabilities,
-  cursorInspectCatalog,
+  cursorCatalog,
   cursorConfigOptions,
   cursorModelRef,
   cursorNativeModel,
@@ -79,6 +79,19 @@ export function cursorError(error: unknown): HarnessError {
 }
 function rejected(code: HarnessError["code"], message: string): { ok: false; error: HarnessError } {
   return { ok: false, error: { code, message, retryable: false } };
+}
+
+function inspectionFromConfig(info: { configOptions?: unknown }): HarnessInspection {
+  const catalog = cursorCatalog(info);
+  return {
+    status: "ready",
+    catalog,
+    capabilities: cursorCapabilities(
+      catalog.thinkingOptions.length > 0 ||
+        cursorModels(info).models.some((model) => !model.value.includes("[")),
+    ),
+    permissionModes: CURSOR_MODES,
+  };
 }
 export class CursorAdapter implements HarnessAdapter {
   readonly subagents: HarnessSubagentCapability = {
@@ -137,24 +150,24 @@ export class CursorAdapter implements HarnessAdapter {
       };
     const cwd = path.resolve(input.cwd ?? process.cwd());
     const cached = this.#inspections.get(cwd);
-    if (cached && (cached.pending || (!input.refresh && cached.expires > Date.now())))
-      return cached.result;
+    if (cached?.pending) return cached.result;
+    const live = [...this.#sessions].find(
+      (session) => path.resolve(session.transport.options.cwd) === cwd,
+    );
+    if (live) {
+      const inspection = inspectionFromConfig({ configOptions: live.configOptions });
+      this.#inspections.set(cwd, {
+        expires: Date.now() + 5 * 60_000,
+        pending: false,
+        result: Promise.resolve(inspection),
+      });
+      return inspection;
+    }
+    if (cached && !input.refresh && cached.expires > Date.now()) return cached.result;
     const result = (async (): Promise<HarnessInspection> => {
       const transport = new CursorTransport(this.transportOptions(cwd));
       try {
-        const info = await transport.open();
-        const catalog = await cursorInspectCatalog(info, (configId, value) =>
-          transport.configure(configId, value),
-        );
-        const parameterized =
-          catalog.thinkingOptions.length > 0 ||
-          cursorModels(info).models.some((model) => !model.value.includes("["));
-        return {
-          status: "ready",
-          catalog,
-          capabilities: cursorCapabilities(parameterized),
-          permissionModes: CURSOR_MODES,
-        };
+        return inspectionFromConfig(await transport.open());
       } catch (error) {
         const failure = cursorError(error);
         return {
