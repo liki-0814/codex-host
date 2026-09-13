@@ -1,6 +1,5 @@
 import type { HarnessModelCatalog, HarnessModelRef } from "@codexhost/shared-contracts";
 
-import { CURSOR_MODEL_VISIBILITY_CHANGE_EVENT } from "./cursor-model-visibility.js";
 import { thinkingOptionsForModel, type RendererModelControlView } from "./renderer-model-picker.js";
 import {
   ensureRendererTriggerChipStyle,
@@ -114,7 +113,6 @@ function readHiddenIds(): Set<string> {
 function writeHiddenIds(ids: ReadonlySet<string>): void {
   try {
     window.localStorage.setItem(HIDDEN_MODELS_KEY, JSON.stringify([...ids]));
-    window.dispatchEvent(new Event(CURSOR_MODEL_VISIBILITY_CHANGE_EVENT));
   } catch {
     // Private mode or quota.
   }
@@ -747,13 +745,8 @@ export function mountCursorModelPicker(
   manageSearch.addEventListener("input", onManageSearch);
   document.addEventListener("pointerdown", onDocumentPointerDown, true);
   document.addEventListener("keydown", onDocumentKeyDown, true);
-  const onVisibilityChange = (): void => {
-    rebuild(lastView);
-    if (!managePanel.hidden) rebuildManage();
-  };
   window.addEventListener("resize", onViewportChange);
   window.addEventListener("scroll", onViewportChange, true);
-  window.addEventListener(CURSOR_MODEL_VISIBILITY_CHANGE_EVENT, onVisibilityChange);
   root.append(trigger);
   document.body.append(menu, thinkingMenu, modelMenu, managePanel);
 
@@ -790,7 +783,6 @@ export function mountCursorModelPicker(
       document.removeEventListener("keydown", onDocumentKeyDown, true);
       window.removeEventListener("resize", onViewportChange);
       window.removeEventListener("scroll", onViewportChange, true);
-      window.removeEventListener(CURSOR_MODEL_VISIBILITY_CHANGE_EVENT, onVisibilityChange);
       menu.remove();
       thinkingMenu.remove();
       modelMenu.remove();

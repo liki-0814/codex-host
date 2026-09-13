@@ -1,57 +1,30 @@
-export const CURSOR_HIDDEN_MODELS_STORAGE_KEY = "codexhost.cursor-model-picker-hidden.v1";
-export const CURSOR_MODEL_VISIBILITY_CHANGE_EVENT = "codexhost-cursor-model-visibility-change";
+/** Must match the Cursor composer picker's hidden-model localStorage key. */
+const HIDDEN_MODELS_KEY = "codexhost.cursor-model-picker-hidden.v1";
 
-interface PreferenceStorage {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-}
-
-function defaultStorage(): PreferenceStorage | null {
+function readHiddenIds(): Set<string> {
   try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-}
-
-export function readCursorHiddenModelIds(
-  storage: PreferenceStorage | null = defaultStorage(),
-): Set<string> {
-  if (!storage) return new Set();
-  try {
-    const raw = storage.getItem(CURSOR_HIDDEN_MODELS_STORAGE_KEY);
+    const raw = window.localStorage.getItem(HIDDEN_MODELS_KEY);
     if (!raw) return new Set();
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return new Set();
-    return new Set(parsed.filter((id): id is string => typeof id === "string" && id.length > 0));
+    return Array.isArray(parsed)
+      ? new Set(parsed.filter((id): id is string => typeof id === "string"))
+      : new Set();
   } catch {
     return new Set();
   }
 }
 
-export function setCursorModelHidden(
-  modelId: string,
-  hidden: boolean,
-  storage: PreferenceStorage | null = defaultStorage(),
-  ownerWindow: Window | null = typeof window === "undefined" ? null : window,
-): void {
-  const ids = readCursorHiddenModelIds(storage);
-  if (hidden) ids.add(modelId);
-  else ids.delete(modelId);
-  if (!storage) return;
-  try {
-    storage.setItem(CURSOR_HIDDEN_MODELS_STORAGE_KEY, JSON.stringify([...ids]));
-  } catch {
-    return;
-  }
-  ownerWindow?.dispatchEvent(new Event(CURSOR_MODEL_VISIBILITY_CHANGE_EVENT));
+export function isCursorModelHidden(modelId: string): boolean {
+  return readHiddenIds().has(modelId);
 }
 
-export function isCursorModelHidden(
-  modelId: string,
-  selectedId?: string,
-  storage: PreferenceStorage | null = defaultStorage(),
-): boolean {
-  if (modelId === selectedId) return false;
-  return readCursorHiddenModelIds(storage).has(modelId);
+export function setCursorModelHidden(modelId: string, hidden: boolean): void {
+  const ids = readHiddenIds();
+  if (hidden) ids.add(modelId);
+  else ids.delete(modelId);
+  try {
+    window.localStorage.setItem(HIDDEN_MODELS_KEY, JSON.stringify([...ids]));
+  } catch {
+    // Private mode or quota.
+  }
 }
