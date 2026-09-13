@@ -745,6 +745,34 @@ button {
   outline-offset: 2px;
 }
 
+.settings-models-search {
+  width: 100%;
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--settings-border);
+  border-radius: 10px;
+  background: var(--settings-surface);
+  color: var(--settings-text);
+  font: inherit;
+}
+
+.settings-models-search:focus-visible {
+  outline: 2px solid var(--settings-focus);
+  outline-offset: 2px;
+}
+
+.settings-models-list {
+  display: flex;
+  flex-direction: column;
+  max-height: min(560px, 58vh);
+  overflow: auto;
+}
+
+.settings-models-row {
+  min-height: 48px;
+  padding: 10px 0;
+}
+
 .settings-connection-page-header {
   display: flex;
   align-items: flex-start;

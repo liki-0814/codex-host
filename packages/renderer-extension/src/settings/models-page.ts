@@ -1,0 +1,116 @@
+import { isCursorModelHidden, setCursorModelHidden } from "../cursor-model-visibility.js";
+import type { RendererSettingsPageDefinition, RendererSettingsPageMountContext } from "./core.js";
+import type { RendererSettingsMessages } from "./localization.js";
+
+export interface RendererCursorModelOption {
+  readonly id: string;
+  readonly label: string;
+}
+
+export interface RendererCursorModelsClient {
+  listModels(): Promise<readonly RendererCursorModelOption[]>;
+}
+
+export function createModelsSettingsPage(
+  messages: RendererSettingsMessages,
+  getClient: () => RendererCursorModelsClient | null = () => null,
+): RendererSettingsPageDefinition {
+  return Object.freeze({
+    id: "models",
+    label: messages.pageLabels.models,
+    icon: "model-pool",
+    mount(context: RendererSettingsPageMountContext) {
+      const document = context.content.ownerDocument;
+      const heading = document.createElement("div");
+      heading.className = "settings-section-label";
+      heading.textContent = messages.pageLabels.models;
+
+      const description = document.createElement("p");
+      description.className = "settings-page-description";
+      description.textContent = messages.modelsDescription;
+
+      const search = document.createElement("input");
+      search.type = "search";
+      search.className = "settings-models-search";
+      search.placeholder = messages.modelsSearchPlaceholder;
+      search.setAttribute("aria-label", messages.modelsSearchPlaceholder);
+
+      const list = document.createElement("div");
+      list.className = "settings-models-list";
+
+      const status = document.createElement("p");
+      status.className = "settings-page-description";
+
+      context.content.append(heading, description, search, list, status);
+
+      const renderUnavailable = (detail: string): void => {
+        list.replaceChildren();
+        status.hidden = false;
+        status.textContent = detail;
+        search.hidden = true;
+      };
+
+      const renderModels = (models: readonly RendererCursorModelOption[]): void => {
+        search.hidden = models.length === 0;
+        status.hidden = models.length > 0;
+        status.textContent = models.length === 0 ? messages.modelsEmpty : "";
+        const query = search.value.trim().toLowerCase();
+        list.replaceChildren();
+        for (const model of models) {
+          const haystack = `${model.label} ${model.id}`.toLowerCase();
+          if (query.length > 0 && !haystack.includes(query)) continue;
+          const row = document.createElement("div");
+          row.className = "settings-preference-row settings-models-row";
+          const copy = document.createElement("span");
+          copy.className = "settings-preference-row__copy";
+          const title = document.createElement("strong");
+          title.textContent = model.label;
+          copy.append(title);
+          const toggle = document.createElement("button");
+          toggle.type = "button";
+          toggle.className = "settings-preference-switch";
+          const visible = !isCursorModelHidden(model.id);
+          toggle.setAttribute("role", "switch");
+          toggle.setAttribute("aria-checked", String(visible));
+          toggle.setAttribute("aria-label", model.label);
+          const thumb = document.createElement("span");
+          thumb.className = "settings-preference-switch__thumb";
+          toggle.append(thumb);
+          toggle.addEventListener("click", () => {
+            const nextVisible = toggle.getAttribute("aria-checked") !== "true";
+            toggle.setAttribute("aria-checked", String(nextVisible));
+            setCursorModelHidden(model.id, !nextVisible);
+          });
+          row.append(copy, toggle);
+          list.append(row);
+        }
+      };
+
+      let models: readonly RendererCursorModelOption[] = [];
+      search.addEventListener("input", () => renderModels(models));
+
+      const load = (): Promise<void> => {
+        const client = getClient();
+        if (!client) {
+          renderUnavailable(messages.modelsUnavailable);
+          return Promise.resolve();
+        }
+        status.hidden = false;
+        status.textContent = messages.modelsLoading;
+        list.replaceChildren();
+        return context.runLatest((_signal) => client.listModels(), {
+          success(result) {
+            models = result;
+            renderModels(models);
+          },
+          failure() {
+            renderUnavailable(messages.modelsLoadFailed);
+          },
+        });
+      };
+
+      void load();
+      return undefined;
+    },
+  });
+}

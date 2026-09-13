@@ -1,5 +1,10 @@
 import type { HarnessModelCatalog, HarnessModelRef } from "@codexhost/shared-contracts";
 
+import {
+  CURSOR_MODEL_VISIBILITY_CHANGE_EVENT,
+  readCursorHiddenModelIds,
+  setCursorModelHidden,
+} from "./cursor-model-visibility.js";
 import { thinkingOptionsForModel, type RendererModelControlView } from "./renderer-model-picker.js";
 import {
   ensureRendererTriggerChipStyle,
@@ -15,7 +20,6 @@ const SEARCH_INPUT_CLASSES =
 const FAST_GROUP_ID = "fast";
 const GROUPED_PREFIX = "g.";
 const STYLE_ATTRIBUTE = "data-codexhost-cursor-picker-style";
-const HIDDEN_MODELS_KEY = "codexhost.cursor-model-picker-hidden.v1";
 const SIDE_MENU_WIDTH = 320;
 const SIDE_MENU_MAX_HEIGHT = 480;
 const MANAGE_PANEL_MAX_HEIGHT = 520;
@@ -95,27 +99,6 @@ function titleCase(value: string): string {
   if (value === "300k") return "300K";
   if (value === "xhigh") return "Extra High";
   return `${value.charAt(0)?.toUpperCase() ?? ""}${value.slice(1).replaceAll("_", " ")}`;
-}
-
-function readHiddenIds(): Set<string> {
-  try {
-    const raw = window.localStorage.getItem(HIDDEN_MODELS_KEY);
-    if (!raw) return new Set();
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? new Set(parsed.filter((id): id is string => typeof id === "string"))
-      : new Set();
-  } catch {
-    return new Set();
-  }
-}
-
-function writeHiddenIds(ids: ReadonlySet<string>): void {
-  try {
-    window.localStorage.setItem(HIDDEN_MODELS_KEY, JSON.stringify([...ids]));
-  } catch {
-    // Private mode or quota.
-  }
 }
 
 function thinkingGroupsForModel(
@@ -491,7 +474,7 @@ export function mountCursorModelPicker(
   };
 
   const rebuildManage = (): void => {
-    const hidden = readHiddenIds();
+    const hidden = readCursorHiddenModelIds();
     manageList.replaceChildren();
     for (const [id, option] of options) {
       const row = document.createElement("div");
@@ -571,7 +554,7 @@ export function mountCursorModelPicker(
     modelRow.dataset.openModels = "true";
     menu.append(modelRow);
 
-    const hidden = readHiddenIds();
+    const hidden = readCursorHiddenModelIds();
     const selectedId = view.selected?.id;
     for (const model of view.catalog?.models ?? []) {
       const button = document.createElement("button");
@@ -676,16 +659,16 @@ export function mountCursorModelPicker(
       return;
     }
     if (!target?.dataset.manageModelId) return;
-    const ids = readHiddenIds();
-    if (target.getAttribute("aria-checked") === "true") ids.add(target.dataset.manageModelId);
-    else ids.delete(target.dataset.manageModelId);
-    writeHiddenIds(ids);
+    setCursorModelHidden(
+      target.dataset.manageModelId,
+      target.getAttribute("aria-checked") === "true",
+    );
     rebuild(lastView);
     rebuildManage();
   };
   const onSearch = (): void => {
     const query = searchInput.value.trim().toLowerCase();
-    const hidden = readHiddenIds();
+    const hidden = readCursorHiddenModelIds();
     let visible = 0;
     for (const [id, option] of options) {
       const hiddenByPref = hidden.has(id) && id !== lastView.selected?.id;
@@ -745,8 +728,13 @@ export function mountCursorModelPicker(
   manageSearch.addEventListener("input", onManageSearch);
   document.addEventListener("pointerdown", onDocumentPointerDown, true);
   document.addEventListener("keydown", onDocumentKeyDown, true);
+  const onVisibilityChange = (): void => {
+    rebuild(lastView);
+    if (!managePanel.hidden) rebuildManage();
+  };
   window.addEventListener("resize", onViewportChange);
   window.addEventListener("scroll", onViewportChange, true);
+  window.addEventListener(CURSOR_MODEL_VISIBILITY_CHANGE_EVENT, onVisibilityChange);
   root.append(trigger);
   document.body.append(menu, thinkingMenu, modelMenu, managePanel);
 
@@ -783,6 +771,7 @@ export function mountCursorModelPicker(
       document.removeEventListener("keydown", onDocumentKeyDown, true);
       window.removeEventListener("resize", onViewportChange);
       window.removeEventListener("scroll", onViewportChange, true);
+      window.removeEventListener(CURSOR_MODEL_VISIBILITY_CHANGE_EVENT, onVisibilityChange);
       menu.remove();
       thinkingMenu.remove();
       modelMenu.remove();

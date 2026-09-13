@@ -690,6 +690,24 @@ export function installRendererBindingProbe(
     },
     openImportedThread: (threadId, signal) =>
       openRendererThread(threadId, { hostId: "local", signal }),
+    getCursorModelsClient: () => {
+      const client = modelClientForHost("local");
+      if (!client) return null;
+      return {
+        async listModels() {
+          const inspection = await client.inspectHarness({
+            harnessId: externalHarnessIds["cursor-cli"],
+          });
+          if (inspection.status !== "ready") {
+            throw new Error(inspection.error.message);
+          }
+          return inspection.catalog.models.map((model) => ({
+            id: model.ref.id,
+            label: model.label,
+          }));
+        },
+      };
+    },
     onLocaleChange() {
       for (const mounted of mountedByComposer.values()) renderMounted(mounted);
     },
