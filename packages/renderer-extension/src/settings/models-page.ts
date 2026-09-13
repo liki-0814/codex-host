@@ -60,12 +60,10 @@ export function createModelsSettingsPage(
           const haystack = `${model.label} ${model.id}`.toLowerCase();
           if (query.length > 0 && !haystack.includes(query)) continue;
           const row = document.createElement("div");
-          row.className = "settings-preference-row settings-models-row";
-          const copy = document.createElement("span");
-          copy.className = "settings-preference-row__copy";
-          const title = document.createElement("strong");
+          row.className = "settings-models-row";
+          const title = document.createElement("span");
+          title.className = "settings-models-row__label";
           title.textContent = model.label;
-          copy.append(title);
           const toggle = document.createElement("button");
           toggle.type = "button";
           toggle.className = "settings-preference-switch";
@@ -81,7 +79,7 @@ export function createModelsSettingsPage(
             toggle.setAttribute("aria-checked", String(nextVisible));
             setCursorModelHidden(model.id, !nextVisible);
           });
-          row.append(copy, toggle);
+          row.append(title, toggle);
           list.append(row);
         }
       };
