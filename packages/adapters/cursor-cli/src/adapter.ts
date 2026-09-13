@@ -119,8 +119,17 @@ export class CursorAdapter implements HarnessAdapter {
     string,
     { expires: number; pending: boolean; result: Promise<HarnessInspection> }
   >();
+  #probe:
+    | {
+        cwd: string;
+        transport: CursorTransport;
+        info: CursorSessionInfo;
+      }
+    | undefined;
   #closed = false;
-  constructor(readonly options: CursorAdapterOptions = {}) {}
+  constructor(readonly options: CursorAdapterOptions = {}) {
+    void this.inspect();
+  }
   transportOptions(cwd: string, environment?: NodeJS.ProcessEnv): CursorTransportOptions {
     return {
       cwd: path.resolve(cwd),
@@ -128,6 +137,11 @@ export class CursorAdapter implements HarnessAdapter {
       ...(this.options.command ? { command: this.options.command } : {}),
       ...(this.options.timeoutMs ? { timeoutMs: this.options.timeoutMs } : {}),
     };
+  }
+  async #closeProbe(): Promise<void> {
+    const probe = this.#probe;
+    this.#probe = undefined;
+    if (probe) await probe.transport.close();
   }
   async inspect(input: InspectHarnessInput = {}): Promise<HarnessInspection> {
     if (this.#closed)
@@ -140,19 +154,29 @@ export class CursorAdapter implements HarnessAdapter {
     if (cached && (cached.pending || (!input.refresh && cached.expires > Date.now())))
       return cached.result;
     const result = (async (): Promise<HarnessInspection> => {
-      const transport = new CursorTransport(this.transportOptions(cwd));
       try {
-        const info = await transport.open();
+        if (!this.#probe || path.resolve(this.#probe.cwd) !== cwd) {
+          await this.#closeProbe();
+          const transport = new CursorTransport(this.transportOptions(cwd));
+          try {
+            const info = await transport.open();
+            this.#probe = { cwd, transport, info };
+          } catch (error) {
+            await transport.close();
+            throw error;
+          }
+        }
+        const { transport, info } = this.#probe;
         const catalog = await cursorInspectCatalog(info, (configId, value) =>
           transport.configure(configId, value),
         );
-        const parameterized =
-          catalog.thinkingOptions.length > 0 ||
-          cursorModels(info).models.some((model) => !model.value.includes("["));
         return {
           status: "ready",
           catalog,
-          capabilities: cursorCapabilities(parameterized),
+          capabilities: cursorCapabilities(
+            catalog.thinkingOptions.length > 0 ||
+              cursorModels(info).models.some((model) => !model.value.includes("[")),
+          ),
           permissionModes: CURSOR_MODES,
         };
       } catch (error) {
@@ -161,8 +185,6 @@ export class CursorAdapter implements HarnessAdapter {
           status: failure.code === "notInstalled" ? "notInstalled" : "unavailable",
           error: failure,
         };
-      } finally {
-        await transport.close();
       }
     })();
     // Cache negative results as well; discovery never starts a polling/retry timer.
@@ -255,6 +277,7 @@ export class CursorAdapter implements HarnessAdapter {
   async close() {
     this.#closed = true;
     await Promise.allSettled([...this.#sessions].map((session) => session.close()));
+    await this.#closeProbe();
     await Promise.allSettled(
       [...this.#inspections.values()].map((inspection) => inspection.result),
     );

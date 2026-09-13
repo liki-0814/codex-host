@@ -107,7 +107,7 @@ describe("Cursor native configuration", () => {
       expect(open).toHaveBeenCalledTimes(1);
       clock.mockReturnValue(700_001);
       await adapter.inspect();
-      expect(open).toHaveBeenCalledTimes(2);
+      expect(open).toHaveBeenCalledTimes(1);
     } finally {
       await adapter.close();
     }
@@ -332,6 +332,25 @@ describe("Cursor native configuration", () => {
     expect(session.initialState.effectiveThinkingOptionId).toBe("g.fast~true.reasoning~high");
     expect(current).toMatchObject({ fast: "true", reasoning: "high" });
     await session.close();
+  });
+  it("keeps a dedicated inspect process started at Adapter construction", async () => {
+    const open = vi.spyOn(CursorTransport.prototype, "open").mockImplementation(async function (
+      this: CursorTransport,
+    ) {
+      this.sessionId = info.sessionId;
+      return info;
+    });
+    const close = vi.spyOn(CursorTransport.prototype, "close").mockResolvedValue();
+    const adapter = new CursorAdapter();
+    try {
+      await adapter.inspect();
+      await adapter.inspect();
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(close).not.toHaveBeenCalled();
+    } finally {
+      await adapter.close();
+    }
+    expect(close).toHaveBeenCalled();
   });
   it("caches failed inspection and retries only on explicit refresh or expiry", async () => {
     const open = vi
