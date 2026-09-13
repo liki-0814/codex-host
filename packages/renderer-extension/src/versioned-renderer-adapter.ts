@@ -957,7 +957,7 @@ export function modelSelectionForAgent(
                     ? encodeHarnessPluginRoute({
                         harnessId: harnessIdSchema.parse(agent),
                         ...(model ? { model } : {}),
-                        ...(thinkingOptionId && agent !== "cursor-cli" ? { thinkingOptionId } : {}),
+                        ...(thinkingOptionId ? { thinkingOptionId } : {}),
                         ...(permissionModeId ? { permissionModeId } : {}),
                       })
                     : transportModelIdForAgent(agent);

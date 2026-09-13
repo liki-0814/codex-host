@@ -9,7 +9,13 @@ import {
 import type { HarnessOutput } from "@codexhost/harness-adapter";
 import { CursorAdapter, CursorSession } from "../src/adapter.js";
 import { CursorTransport, type CursorCallbacks } from "../src/transport.js";
-import { cursorModelRef, cursorCatalog, cursorNativeModel } from "../src/models.js";
+import {
+  cursorCatalog,
+  cursorInspectCatalog,
+  cursorModelRef,
+  cursorNativeModel,
+  cursorSessionConfiguration,
+} from "../src/models.js";
 import { CursorInteractions } from "../src/interactions.js";
 import { cursorSnapshot } from "../src/projection.js";
 
@@ -150,6 +156,182 @@ describe("Cursor native configuration", () => {
     expect(cursorNativeModel(info, ref.id)).toBe("model[effort=high]");
     expect(() => cursorNativeModel(info, "unknown")).toThrow();
     expect(cursorCatalog(info).thinkingOptions).toEqual([]);
+  });
+  it("maps ACP model parameters onto grouped Thinking and Fast options", () => {
+    const parameterized = {
+      sessionId: info.sessionId,
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          type: "select" as const,
+          currentValue: "gpt-5.6-sol",
+          options: [
+            { value: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
+            { value: "composer-2.5", name: "Composer 2.5" },
+          ],
+        },
+        {
+          id: "reasoning",
+          name: "Reasoning",
+          type: "select" as const,
+          category: "thought_level",
+          currentValue: "medium",
+          options: [
+            { value: "medium", name: "Medium" },
+            { value: "high", name: "High" },
+          ],
+        },
+        {
+          id: "fast",
+          name: "Fast",
+          type: "select" as const,
+          category: "model_config",
+          currentValue: "false",
+          options: [
+            { value: "false", name: "Off" },
+            { value: "true", name: "Fast" },
+          ],
+        },
+      ],
+    };
+    const catalog = cursorCatalog(parameterized);
+    const gpt = catalog.models.find((model) => model.label === "GPT-5.6 Sol");
+    expect(catalog.thinkingOptions.map((option) => option.label).sort()).toEqual(
+      ["Medium", "Medium · Fast", "High", "High · Fast"].sort(),
+    );
+    expect(gpt?.supportedThinkingOptionIds).toHaveLength(4);
+    expect(cursorNativeModel(parameterized, cursorModelRef("gpt-5.6-sol").id)).toBe("gpt-5.6-sol");
+    expect(
+      cursorSessionConfiguration(parameterized, cursorModelRef("gpt-5.6-sol"))
+        .effectiveThinkingOptionId,
+    ).toBe("g.fast~false.reasoning~medium");
+  });
+  it("discovers per-model Thinking options during inspect", async () => {
+    const parameterized = {
+      sessionId: info.sessionId,
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          type: "select" as const,
+          currentValue: "default",
+          options: [
+            { value: "default", name: "Auto" },
+            { value: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
+            { value: "composer-2.5", name: "Composer 2.5" },
+          ],
+        },
+      ],
+    };
+    const byModel: Record<string, unknown[]> = {
+      default: parameterized.configOptions,
+      "gpt-5.6-sol": [
+        parameterized.configOptions[0],
+        {
+          id: "reasoning",
+          name: "Reasoning",
+          type: "select",
+          currentValue: "medium",
+          options: [
+            { value: "medium", name: "Medium" },
+            { value: "high", name: "High" },
+          ],
+        },
+        {
+          id: "fast",
+          name: "Fast",
+          type: "select",
+          currentValue: "false",
+          options: [
+            { value: "false", name: "Off" },
+            { value: "true", name: "Fast" },
+          ],
+        },
+      ],
+      "composer-2.5": [
+        parameterized.configOptions[0],
+        {
+          id: "fast",
+          name: "Fast",
+          type: "select",
+          currentValue: "false",
+          options: [
+            { value: "false", name: "Off" },
+            { value: "true", name: "Fast" },
+          ],
+        },
+      ],
+    };
+    const catalog = await cursorInspectCatalog(parameterized, async (_id, value) => ({
+      configOptions: byModel[value] ?? parameterized.configOptions,
+    }));
+    expect(
+      catalog.models.find((model) => model.label === "GPT-5.6 Sol")?.supportedThinkingOptionIds,
+    ).toHaveLength(4);
+    expect(
+      catalog.models.find((model) => model.label === "Composer 2.5")?.supportedThinkingOptionIds,
+    ).toEqual(["g.fast~false", "g.fast~true"]);
+    expect(
+      catalog.models.find((model) => model.label === "Auto")?.supportedThinkingOptionIds,
+    ).toBeUndefined();
+  });
+  it("selects Fast and Reasoning independently through Thinking commands", async () => {
+    const parameterized = {
+      sessionId: info.sessionId,
+      modes: { currentModeId: "agent" },
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          type: "select" as const,
+          currentValue: "gpt-5.6-sol",
+          options: [{ value: "gpt-5.6-sol", name: "GPT-5.6 Sol" }],
+        },
+        {
+          id: "reasoning",
+          name: "Reasoning",
+          type: "select" as const,
+          currentValue: "medium",
+          options: [
+            { value: "medium", name: "Medium" },
+            { value: "high", name: "High" },
+          ],
+        },
+        {
+          id: "fast",
+          name: "Fast",
+          type: "select" as const,
+          currentValue: "false",
+          options: [
+            { value: "false", name: "Off" },
+            { value: "true", name: "Fast" },
+          ],
+        },
+      ],
+    };
+    const current = Object.fromEntries(
+      parameterized.configOptions.map((option) => [option.id, option.currentValue]),
+    );
+    const transport = new FakeTransport({ cwd: process.cwd(), environment: {} });
+    const session = new CursorSession(transport, parameterized, () => {});
+    vi.spyOn(transport, "configure").mockImplementation(async (configId, value) => {
+      current[configId] = value;
+      return {
+        configOptions: parameterized.configOptions.map((option) => ({
+          ...option,
+          currentValue: current[option.id] ?? option.currentValue,
+        })),
+      };
+    });
+    const selected = await session.execute({
+      type: "thinking.select",
+      thinkingOptionId: "g.fast~true.reasoning~high",
+    });
+    expect(selected.ok).toBe(true);
+    expect(session.initialState.effectiveThinkingOptionId).toBe("g.fast~true.reasoning~high");
+    expect(current).toMatchObject({ fast: "true", reasoning: "high" });
+    await session.close();
   });
   it("caches failed inspection and retries only on explicit refresh or expiry", async () => {
     const open = vi

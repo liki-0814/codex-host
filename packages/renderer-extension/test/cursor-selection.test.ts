@@ -28,14 +28,17 @@ describe("Cursor and Kiro selection in one Desktop", () => {
     expect(controller.modelForAgent(composer, "kiro-cli")).toEqual(kiro);
     expect(controller.thinkingOptionForAgent(composer, "cursor-cli")).toBeUndefined();
     expect(controller.thinkingOptionForAgent(composer, "kiro-cli")).toBe(high);
+    controller.setExternalThinkingOption(composer, "cursor-cli", high);
+    expect(controller.thinkingOptionForAgent(composer, "cursor-cli")).toBe(high);
+    expect(controller.thinkingOptionForAgent(composer, "kiro-cli")).toBe(high);
     const selection = modelSelectionForAgent(null, null, "cursor-cli", cursor, high, mode);
     if (typeof selection?.model !== "string") throw Error("Missing Cursor carrier");
     expect(decodeHarnessPluginRoute(selection.model)).toMatchObject({
       harnessId: "cursor-cli",
       model: cursor,
+      thinkingOptionId: high,
       permissionModeId: mode,
     });
-    expect(decodeHarnessPluginRoute(selection.model)?.thinkingOptionId).toBeUndefined();
     expect(
       restoredThreadOwnership({
         owner: "external",
@@ -44,7 +47,12 @@ describe("Cursor and Kiro selection in one Desktop", () => {
         locked: true,
         history: { fork: false, forkAcrossCwd: false, rollbackLastTurn: false },
       }),
-    ).toEqual({ agent: "cursor-cli", model: cursor, permissionModeId: mode });
+    ).toEqual({
+      agent: "cursor-cli",
+      model: cursor,
+      thinkingOptionId: high,
+      permissionModeId: mode,
+    });
     expect(RENDERER_AGENT_LABELS["cursor-cli"]).toBe("Cursor CLI (Experimental)");
     expect(RENDERER_AGENT_INSTALL_URLS["cursor-cli"]).toBe(
       "https://cursor.com/docs/cli/installation",

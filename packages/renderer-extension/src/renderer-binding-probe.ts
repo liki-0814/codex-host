@@ -472,11 +472,9 @@ export function restoredThreadOwnership(inspection: ThreadInspection): RestoredT
     }
     const model = inspection.effectiveModel ?? route.model;
     const thinkingOptionId =
-      inspection.harnessId === "cursor-cli"
-        ? undefined
-        : inspection.availableThinkingOptions !== undefined
-          ? selectableThinkingOptionId(inspection)
-          : (inspection.effectiveThinkingOptionId ?? route.thinkingOptionId);
+      inspection.availableThinkingOptions !== undefined
+        ? selectableThinkingOptionId(inspection)
+        : (inspection.effectiveThinkingOptionId ?? route.thinkingOptionId);
     const permissionModeId = inspection.effectivePermissionModeId ?? route.permissionModeId;
     return {
       agent: inspection.harnessId,
