@@ -103,3 +103,5 @@ export const packageMetadata = {
   name: "@codexhost/harness-adapter",
   contractVersion: WORKSPACE_CONTRACT_VERSION,
 } as const;
+
+export { nativeSessionImport } from "./session-import.js";

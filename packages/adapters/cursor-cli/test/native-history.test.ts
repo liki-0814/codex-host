@@ -1,3 +1,4 @@
+import { cursorImportCandidates } from "../src/session-import.js";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
@@ -58,6 +59,16 @@ function fixture(texts = ["first", "second"]) {
   return { home, sessionId, turns };
 }
 describe("Cursor read-only native identity", () => {
+  it("discovers only resumable nonempty ACP stores", async () => {
+    const f = fixture();
+    expect(await cursorImportCandidates({ HOME: f.home })).toMatchObject([
+      { nativeSessionId: f.sessionId, cwd: f.home, title: "first", running: null },
+    ]);
+    writeFileSync(path.join(f.home, ".cursor", "acp-sessions", f.sessionId, "meta.json"), "{}");
+    expect(await cursorImportCandidates({ HOME: f.home })).toEqual([]);
+    const empty = fixture([]);
+    expect(await cursorImportCandidates({ HOME: empty.home })).toEqual([]);
+  });
   it("returns stable ordered native IDs from a freshly opened store", () => {
     const f = fixture();
     expect(readCursorNativeTurns(f.sessionId, f.home, { HOME: f.home })).toEqual(f.turns);

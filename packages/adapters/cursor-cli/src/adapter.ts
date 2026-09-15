@@ -1,3 +1,5 @@
+import { nativeSessionImport } from "@codexhost/harness-adapter";
+import { cursorImportCandidates } from "./session-import.js";
 import type { HarnessCommandCapability } from "@codexhost/harness-adapter";
 import { fetchCursorAccount } from "./account-usage.js";
 import { decodeCursorPermission } from "./permission-modes.js";
@@ -78,6 +80,12 @@ function rejected(code: HarnessError["code"], message: string): { ok: false; err
   return { ok: false, error: { code, message, retryable: false } };
 }
 export class CursorAdapter implements HarnessAdapter {
+  readonly sessionImport = nativeSessionImport(
+    harnessIdSchema.parse("cursor-cli"),
+    (signal) => cursorImportCandidates(this.options.environment ?? process.env, signal),
+    () => this.#closed,
+  );
+
   readonly subagents: HarnessSubagentCapability = {
     readSnapshot: async ({ parent, nativeSubagentId, cwd }) => {
       if (parent.harnessId !== this.harnessId || this.#closed)
@@ -241,6 +249,7 @@ export class CursorAdapter implements HarnessAdapter {
   }
   async close() {
     this.#closed = true;
+    await this.sessionImport.close();
     await Promise.allSettled([...this.#sessions].map((session) => session.close()));
     await Promise.allSettled(
       [...this.#inspections.values()].map((inspection) => inspection.result),

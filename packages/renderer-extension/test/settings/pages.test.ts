@@ -1,3 +1,5 @@
+import { createAgentGroupPreferenceStore } from "../../src/agent-group-preference.js";
+import { createSessionImportSettingsPage } from "../../src/settings/session-import-page.js";
 import {
   harnessIdSchema,
   hostThreadIdSchema,
@@ -1177,6 +1179,43 @@ describe("Renderer Session Import page", () => {
     expect(
       descendants(content).filter(({ dataset }) => dataset.sessionImportId !== undefined),
     ).toHaveLength(1);
+    scope.dispose();
+  });
+
+  it("hides More-group Harnesses from import and refreshes when they return", async () => {
+    const groups = createAgentGroupPreferenceStore(null);
+    groups.moveAgent("qoder", "more");
+    const client = {
+      listSessionImportSources: vi.fn(async () => ({
+        harnesses: [
+          { harnessId: harnessIdSchema.parse("qoder"), name: "Qoder" },
+          { harnessId: harnessIdSchema.parse("pi"), name: "Pi" },
+        ],
+      })),
+      listHarnessSessions: vi.fn(async () => ({ candidates: [], total: 0 })),
+      importHarnessSession: vi.fn(async () => ({ threadId: hostThreadIdSchema.parse("unused") })),
+    };
+    const page = createSessionImportSettingsPage(
+      rendererSettingsMessages("en"),
+      () => client,
+      async () => undefined,
+      groups,
+    );
+    const content = new FakeDocument().createElement("main");
+    const scope = new RendererSettingsPageScope();
+    const dispose = page.mount({
+      content: content as unknown as HTMLElement,
+      signal: scope.signal,
+      runLatest: (operation, handlers) => scope.runLatest(operation, handlers),
+    });
+    const options = () =>
+      descendants(content)
+        .filter(({ dataset }) => dataset.sessionImportHarnessOption !== undefined)
+        .map(({ textContent }) => textContent);
+    await vi.waitFor(() => expect(options()).toEqual(["Pi"]));
+    groups.moveAgent("qoder", "main");
+    await vi.waitFor(() => expect(options()).toEqual(["Qoder", "Pi"]));
+    if (typeof dispose === "function") dispose();
     scope.dispose();
   });
 

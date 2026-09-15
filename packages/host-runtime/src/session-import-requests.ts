@@ -55,12 +55,31 @@ export class SessionImportRequests {
     if (request.method === SOURCES) {
       if (!harnessSessionImportSourcesParamsSchema.safeParse(request.params).success)
         return invalid();
-      const harnesses = [...this.input.adapters]
-        .filter(([, adapter]) => Boolean(adapter.sessionImport?.resolveCandidate))
-        .map(([harnessId]) => ({
-          harnessId,
-          name: this.input.descriptors().find(({ id }) => id === harnessId)?.name ?? harnessId,
-        }));
+      const sources = await Promise.all(
+        [...this.input.adapters]
+          .filter(([, adapter]) => Boolean(adapter.sessionImport?.resolveCandidate))
+          .map(async ([harnessId, adapter]) => {
+            try {
+              const inspection = await adapter.inspect();
+              if (
+                inspection.status === "notInstalled" ||
+                (inspection.status !== "ready" && inspection.error.code === "notInstalled")
+              )
+                return [];
+              return [
+                {
+                  harnessId,
+                  name:
+                    this.input.descriptors().find(({ id }) => id === harnessId)?.name ?? harnessId,
+                },
+              ];
+            } catch (error) {
+              this.input.diagnose(error);
+              return [];
+            }
+          }),
+      );
+      const harnesses = sources.flat();
       return {
         body: {
           result: jsonValueSchema.parse(

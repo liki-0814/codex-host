@@ -1,4 +1,5 @@
-import { listSubagents, getSubagentMessages } from "@qoder-ai/qoder-agent-sdk";
+import { nativeSessionImport } from "@codexhost/harness-adapter";
+import { listSessions, listSubagents, getSubagentMessages } from "@qoder-ai/qoder-agent-sdk";
 import type { HarnessSubagentCapability } from "@codexhost/harness-adapter";
 import { projectQoderAccount } from "./qoder-account.js";
 import { randomUUID } from "node:crypto";
@@ -72,6 +73,7 @@ export interface QoderAdapterOptions {
     sessionId: string,
     options?: GetSessionInfoOptions,
   ) => Promise<SDKSessionInfo | undefined>;
+  listSessions?: () => Promise<SDKSessionInfo[]>;
   getAvailableModels?: () => Promise<QoderModelInfo[]>;
   resolveExecutable?: typeof resolveQoderExecutable;
 }
@@ -79,6 +81,23 @@ export interface QoderAdapterOptions {
 export class QoderAdapter implements HarnessAdapter {
   readonly harnessId: HarnessId = harnessIdSchema.parse("qoder");
   readonly commandCatalog = QODER_FALLBACK_COMMAND_CATALOG;
+  readonly sessionImport = nativeSessionImport(
+    this.harnessId,
+    async () =>
+      (await this.#listSessions())
+        .filter((session) => session.cwd && path.isAbsolute(session.cwd))
+        .map((session) => ({
+          nativeSessionId: session.sessionId,
+          cwd: session.cwd,
+          title:
+            (session.customTitle || session.summary || session.firstPrompt || "").slice(0, 4096) ||
+            null,
+          updatedAt: Math.floor(session.lastModified),
+          running: null,
+        })),
+    () => this.#closed,
+  );
+
   readonly subagents: HarnessSubagentCapability = {
     readSnapshot: async ({ parent, nativeSubagentId, cwd }) => {
       if (parent.harnessId !== this.harnessId)
@@ -113,6 +132,7 @@ export class QoderAdapter implements HarnessAdapter {
     },
   };
 
+  readonly #listSessions: () => Promise<SDKSessionInfo[]>;
   readonly #commandOverride: string | undefined;
   readonly #environment: Record<string, string | undefined>;
   readonly #platform: NodeJS.Platform;
@@ -145,6 +165,7 @@ export class QoderAdapter implements HarnessAdapter {
     this.#forkSession = options.forkSession ?? defaultForkSession;
     this.#getSessionMessages = options.getSessionMessages ?? defaultGetSessionMessages;
     this.#getSessionInfo = options.getSessionInfo ?? defaultGetSessionInfo;
+    this.#listSessions = options.listSessions ?? listSessions;
     this.#getAvailableModels = options.getAvailableModels;
     this.#resolveExecutable = options.resolveExecutable ?? resolveQoderExecutable;
   }
@@ -536,6 +557,7 @@ export class QoderAdapter implements HarnessAdapter {
 
   async close(): Promise<void> {
     this.#closed = true;
+    await this.sessionImport.close();
     const probes = [...this.#accountProbes];
     this.#accountProbes.clear();
     const sessions = [...this.#sessions];

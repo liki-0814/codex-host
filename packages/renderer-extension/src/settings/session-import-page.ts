@@ -1,3 +1,7 @@
+import {
+  getSharedAgentGroupPreferenceStore,
+  type AgentGroupPreferenceStore,
+} from "../agent-group-preference.js";
 import type {
   HarnessId,
   HarnessSessionImportCandidate,
@@ -48,6 +52,7 @@ export function createSessionImportSettingsPage(
   messages: RendererSettingsMessages,
   getClient: () => RendererSessionImportClient | null,
   openImportedThread: RendererImportedThreadOpener,
+  groupPreference: AgentGroupPreferenceStore = getSharedAgentGroupPreferenceStore(),
 ): RendererSettingsPageDefinition {
   return Object.freeze({
     id: "session-import",
@@ -412,13 +417,20 @@ export function createSessionImportSettingsPage(
         void context.runLatest(
           async (signal) => {
             const result = await client.listSessionImportSources();
+            const hidden = new Set(
+              groupPreference
+                .list()
+                .filter((entry) => entry.section === "more")
+                .map((entry) => String(entry.agent)),
+            );
+            const visible = result.harnesses.filter(({ harnessId }) => !hidden.has(harnessId));
             const selected =
-              result.harnesses.find(({ harnessId }) => harnessId === requestedHarness)?.harnessId ??
-              result.harnesses[0]?.harnessId ??
+              visible.find(({ harnessId }) => harnessId === requestedHarness)?.harnessId ??
+              visible[0]?.harnessId ??
               null;
             if (signal.aborted) throw new Error("Session import selection changed");
             // Keep the selector available even if one Harness's current native protocol is unsupported.
-            sources = result.harnesses;
+            sources = visible;
             selectedHarness = selected;
             if (selected !== requestedHarness) {
               listControls.reset();
@@ -455,7 +467,7 @@ export function createSessionImportSettingsPage(
 
       refresh.addEventListener("click", load);
       load();
-      return undefined;
+      return groupPreference.subscribe(load);
     },
   });
 }

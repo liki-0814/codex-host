@@ -129,6 +129,14 @@ describe("Generic native Session import", () => {
   it("separates same native IDs across Harnesses and shares DSH legacy RPC aliases with the generic transaction", async () => {
     const f = await fixture();
     const dsh = dshAdapter(f.cwd);
+    vi.spyOn(f.pi, "inspect").mockImplementation(() => dsh.inspect());
+    const missing = Object.assign(new FakeHarnessAdapter(harnessIdSchema.parse("missing")), {
+      sessionImport: dsh.sessionImport,
+      inspect: async () => ({
+        status: "notInstalled" as const,
+        error: { code: "notInstalled" as const, message: "Not installed", retryable: false },
+      }),
+    });
     const discoveryOnly = Object.assign(
       new FakeHarnessAdapter(harnessIdSchema.parse("discovery-only")),
       {
@@ -139,6 +147,7 @@ describe("Generic native Session import", () => {
       ["pi", f.pi],
       ["deepseek-harness", dsh],
       ["discovery-only", discoveryOnly],
+      ["missing", missing],
     ]);
     const rpc = new SessionImportRequests({
       adapters,

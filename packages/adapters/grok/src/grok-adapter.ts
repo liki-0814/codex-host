@@ -1,3 +1,5 @@
+import { nativeSessionImport } from "@codexhost/harness-adapter";
+import { grokImportCandidates } from "./session-import.js";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
@@ -1419,6 +1421,11 @@ class GrokHarnessSession implements HarnessSession {
 }
 
 export class GrokAdapter implements HarnessAdapter {
+  readonly sessionImport = nativeSessionImport(
+    grokHarnessId,
+    (signal) => grokImportCandidates({ ...process.env, ...this.#environment }, signal),
+    () => Boolean(this.#closePromise),
+  );
   readonly commandCatalog = grokCommandCatalog;
   readonly harnessId: HarnessId = grokHarnessId;
   readonly subagents: HarnessSubagentCapability = {
@@ -1865,6 +1872,7 @@ export class GrokAdapter implements HarnessAdapter {
       this.#accountAbort.abort();
       this.#inspectionCache.clear();
       this.#closePromise = (async () => {
+        await this.sessionImport.close();
         await Promise.all(this.#inspections.values());
         await Promise.all([
           ...this.#inspectionCleanup,

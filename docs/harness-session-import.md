@@ -2,11 +2,11 @@
 
 ## 当前范围
 
-设置 → 会话导入可登记 **Pi 原生 v3 Session** 和 **DSH `0.1.2-rc.1` / `0.1.5-rc.1` Session**。导入只建立 Host Thread 与原生 Session 的映射，不复制 Transcript、不转换 Harness、不发送用户 Turn；打开后仍通过对应 Adapter 的 `open({ kind: "resume" })` 恢复历史并继续会话。
+设置 → 会话导入可登记 **Pi 原生 v3 Session** 、**DSH `0.1.2-rc.1` / `0.1.5-rc.1` Session**、**Qoder SDK Session**、**Grok Session** 和 **Cursor CLI ACP Session**。导入只建立 Host Thread 与原生 Session 的映射，不复制 Transcript、不转换 Harness、不发送用户 Turn；打开后仍通过对应 Adapter 的 `open({ kind: "resume" })` 恢复历史并继续会话。
 
 - 设置页始终使用本地 Host，即使 Composer 当前连接远程工作区。
 - 可选 Harness 来自该 Host 已加载、同时提供发现和解析能力的 Adapter，不使用 Renderer 内置 Harness 名单。
-- 目录表示“实现了导入接口”，不保证当前原生运行时可用。不支持的 DSH 版本、旧 Host、缺失插件或不可用存储会明确失败，不伪装成无候选。
+- 来源列表会检查 Adapter 并排除本地未安装的 Harness；界面同时遵循连接页分组偏好，移入“更多”的 Harness 不显示为导入选项；认证、协议或存储错误仍在列表读取时明确显示。不支持的 DSH 版本、旧 Host、缺失插件或不可用存储会明确失败，不伪装成无候选。
 - DSH 仅允许本机、codexhost 托管的精确 `0.1.2-rc.1` 和 `0.1.5-rc.1`；Legacy 协议已移除，其他版本使用现有错误入口提示支持范围并推荐 `dsh-v0.1.5-rc.1`。
 - 本次没有增加远程扫描、CC direct/Broker 导入，也没有完成整个 Agent Picker 的动态插件化。
 
@@ -91,3 +91,10 @@ Host 不承诺在 resolver 与 resume 之间锁住外部客户端；当前没有
 还使用 Pi **0.85.0** 的真实 `SessionManager` 创建隔离临时会话，经公共 Host importer 登记，再用真实 `pi --mode rpc --session ...` 恢复历史并继续一轮，验证同一 Session ID 与同一 JSONL 文件。该检查使用回环地址上的模拟 Provider，不调用付费 Model 服务，也不读取/修改用户原有会话。
 
 这不是 Codex Desktop 端到端验收，也不代表 Windows、远程或 DSH 真机已在本次验证。
+
+## Qoder、Grok 与 Cursor
+
+- Qoder 使用官方 SDK `listSessions()` 发现原生 ID、标题、更新时间和 cwd，再通过现有 SDK resume/history 路径恢复。缺少绝对项目路径的记录不列出。
+- Grok 读取原生 `sessions/<workspace>/<id>/summary.json`，核对 ID 与工作区，恢复仍使用原生 ACP `loadSession`。
+- Cursor 仅列出 `.cursor/acp-sessions` 中可解析、有用户回合的会话；只读核对 metadata、数据库身份及原生 turn 引用。普通 CLI/TUI 或 IDE 会话不属于该 ACP 会话库，不跨库复制或伪造导入。
+- 三者均在导入时重新发现所选 ID，丢弃格式不兼容和身份歧义的记录；不可靠的跨进程活动状态保持 `running: null`。请先关闭原生客户端中的对应会话。
