@@ -71,36 +71,40 @@ afterEach(async () => {
 });
 
 describe("Harness plugin discovery and loading", () => {
-  it("loads the relocated CodeBuddy bundle without workspace dependencies and isolates factories", async () => {
-    const directory = await root(["codebuddy"]);
-    await cp(
-      path.resolve("packages/host-runtime/dist/plugins/codebuddy"),
-      path.join(directory, "codebuddy"),
-      { recursive: true },
-    );
-    const options = {
-      roots: [directory],
-      context: {
-        ...context,
-        environment: { CODEXHOST_CODEBUDDY_COMMAND: path.join(directory, "missing-codebuddy") },
-      },
-      warmup: false,
-    };
-    const first = await loadHarnessPlugins(options),
-      second = await loadHarnessPlugins(options);
-    try {
-      expect(first.list()).toMatchObject([{ id: "codebuddy", name: "CodeBuddy" }]);
-      const adapter = [...first.adapters.values()][0],
-        independent = [...second.adapters.values()][0];
-      expect(adapter).not.toBe(independent);
-      expect(await adapter?.inspect()).toMatchObject({ status: "notInstalled" });
-      await first.close();
-      expect(await independent?.inspect()).toMatchObject({ status: "notInstalled" });
-    } finally {
-      await first.close();
-      await second.close();
-    }
-  });
+  it.each(["codebuddy", "kimi-code"])(
+    "loads the relocated %s bundle without workspace dependencies and isolates factories",
+    async (id) => {
+      const directory = await root([id]);
+      await cp(path.resolve("packages/host-runtime/dist/plugins", id), path.join(directory, id), {
+        recursive: true,
+      });
+      const options = {
+        roots: [directory],
+        context: {
+          ...context,
+          environment: {
+            [id === "codebuddy" ? "CODEXHOST_CODEBUDDY_COMMAND" : "CODEXHOST_KIMI_CODE_COMMAND"]:
+              path.join(directory, "missing"),
+          },
+        },
+        warmup: false,
+      };
+      const first = await loadHarnessPlugins(options),
+        second = await loadHarnessPlugins(options);
+      try {
+        expect(first.list()).toMatchObject([{ id }]);
+        const adapter = [...first.adapters.values()][0],
+          independent = [...second.adapters.values()][0];
+        expect(adapter).not.toBe(independent);
+        expect(await adapter?.inspect()).toMatchObject({ status: "notInstalled" });
+        await first.close();
+        expect(await independent?.inspect()).toMatchObject({ status: "notInstalled" });
+      } finally {
+        await first.close();
+        await second.close();
+      }
+    },
+  );
 
   it.each(["pi", "claude-code", "deepseek-harness", "opencode", "grok", "omp", "antigravity"])(
     "ships a valid %s manifest and resolvable compiled resources",

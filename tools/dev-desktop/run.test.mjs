@@ -149,6 +149,23 @@ describe("development Desktop start", () => {
     expect(runningDesktopCleanupInvocation("linux")).toBeNull();
   });
 
+  it("does not mistake independent app resource tools for Desktop", () => {
+    const script = runningDesktopCleanupInvocation("darwin").arguments.at(-1);
+    const pattern = new RegExp(script.match(/system_desktop_pattern='([^']+)'/)[1]);
+    expect(
+      pattern.test("/Applications/ChatGPT.app/Contents/MacOS/ChatGPT --remote-debugging-port=1234"),
+    ).toBe(true);
+    expect(pattern.test("/Applications/Codex.app/Contents/MacOS/Codex")).toBe(true);
+    expect(
+      pattern.test("/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"),
+    ).toBe(false);
+    expect(
+      pattern.test(
+        "/Applications/ChatGPT.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper",
+      ),
+    ).toBe(false);
+  });
+
   it("constructs npm and native launcher commands without internal Host environment", () => {
     expect(npmBuildInvocation({ npm_execpath: "/npm/npm-cli.js" }, "linux", "/node")).toEqual({
       command: "/node",

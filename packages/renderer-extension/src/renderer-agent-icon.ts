@@ -7,6 +7,7 @@ import codeBuddyAgentIconUrl from "./assets/codebuddy-agent.svg";
 import cursorAgentIconUrl from "./assets/cursor-agent.svg";
 import ompAgentIconUrl from "./assets/omp-agent.svg";
 import openCodeAgentIconUrl from "./assets/opencode-agent.png";
+import kimiAgentIconUrl from "./assets/kimi-code-agent.svg";
 import qoderAgentIconUrl from "./assets/qoder-agent.svg";
 import type { RendererAgent } from "./agent-selection-state.js";
 
@@ -24,6 +25,7 @@ export const RENDERER_AGENT_LABELS: Record<RendererAgent, string> = {
   "cursor-cli": "Cursor CLI (Experimental)",
   hermes: "Hermes",
   qoder: "Qoder",
+  "kimi-code": "Kimi Code",
 };
 
 const PI_PATHS = [
@@ -157,9 +159,9 @@ export function createRendererAgentIcon(
     image.style.flex = "none";
     return image;
   }
-  if (agent === "qoder") {
+  if (agent === "qoder" || agent === "kimi-code") {
     const image = ownerDocument.createElement("img");
-    image.src = qoderAgentIconUrl;
+    image.src = agent === "kimi-code" ? kimiAgentIconUrl : qoderAgentIconUrl;
     image.alt = "";
     image.draggable = false;
     image.style.width = `${size}px`;

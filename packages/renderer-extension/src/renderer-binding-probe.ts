@@ -103,6 +103,7 @@ const externalHarnessIds = {
   "cursor-cli": harnessIdSchema.parse("cursor-cli"),
   hermes: harnessIdSchema.parse("hermes"),
   qoder: harnessIdSchema.parse("qoder"),
+  "kimi-code": harnessIdSchema.parse("kimi-code"),
 } as const;
 
 const externalAgents: readonly ExternalRendererAgent[] = [
@@ -118,6 +119,7 @@ const externalAgents: readonly ExternalRendererAgent[] = [
   "cursor-cli",
   "hermes",
   "qoder",
+  "kimi-code",
 ];
 type HarnessAvailability = Partial<Record<ExternalRendererAgent, RendererAgentAvailability>>;
 type HarnessAvailabilityErrors = Partial<Record<ExternalRendererAgent, CodexhostError | undefined>>;
@@ -471,7 +473,8 @@ export function restoredThreadOwnership(inspection: ThreadInspection): RestoredT
   if (
     inspection.harnessId === "kiro-cli" ||
     inspection.harnessId === "codebuddy" ||
-    inspection.harnessId === "cursor-cli"
+    inspection.harnessId === "cursor-cli" ||
+    inspection.harnessId === "kimi-code"
   ) {
     const route = decodeHarnessPluginRoute(inspection.transportModelId);
     if (!route || route.harnessId !== inspection.harnessId) {
@@ -758,6 +761,7 @@ export function installRendererBindingProbe(
       "cursor-cli": undefined,
       hermes: undefined,
       qoder: undefined,
+      "kimi-code": undefined,
     },
     webUi: Object.fromEntries(
       externalAgents.map((agent) => [agent, false]),

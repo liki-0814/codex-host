@@ -15,6 +15,8 @@ import MessageCircle from "lucide/dist/esm/icons/message-circle.mjs";
 import Pencil from "lucide/dist/esm/icons/pencil.mjs";
 import SlidersHorizontal from "lucide/dist/esm/icons/sliders-horizontal.mjs";
 import ShieldAlert from "lucide/dist/esm/icons/shield-alert.mjs";
+import Zap from "lucide/dist/esm/icons/zap.mjs";
+import ShieldQuestion from "lucide/dist/esm/icons/shield-question-mark.mjs";
 
 import {
   rendererHarnessMessages,
@@ -62,8 +64,10 @@ export interface RendererPermissionModePickerControl {
 }
 
 function permissionIcon(mode?: HarnessPermissionMode): IconNode {
-  if (mode?.dangerous) return ShieldAlert;
   const name = (mode?.label ?? "").toLowerCase();
+  if (/按需审批|on.request|as.needed/.test(name)) return ShieldQuestion;
+  if (/自动执行|^auto$|bypass|full.access/.test(name)) return Zap;
+  if (mode?.dangerous) return ShieldAlert;
   if (/plan|规划|计划/.test(name)) return ListChecks;
   if (/^ask$|^询问$/.test(name) && mode?.values) return MessageCircle;
   if (/auto|agent|自动执行/.test(name)) return Terminal;

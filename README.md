@@ -2,7 +2,7 @@
 
 # CodexHost
 
-**在 Codex Desktop 中运行 Pi 和其他 Harness**
+**在 Codex Desktop 中运行 Pi、Cursor、Qoder、Kimi Code 等 Harness**
 
 我们认为 **Codex Desktop** 提供了目前最好的桌面开发交互体验。
 
@@ -30,6 +30,8 @@
   <a href="https://www.codebuddy.cn/home/"><img alt="CodeBuddy" src="docs/imgs/badge-codebuddy.svg" /></a>
   <a href="https://cursor.com/docs/cli/overview"><img alt="Cursor" src="docs/imgs/badge-cursor.svg" /></a>
   <a href="https://hermes-agent.nousresearch.com/docs"><img alt="Hermes" src="docs/imgs/badge-hermes.svg" /></a>
+  <a href="https://docs.qoder.com/"><img alt="Qoder" src="https://img.shields.io/badge/Qoder-171717" /></a>
+  <a href="https://moonshotai.github.io/kimi-code/en/"><img alt="Kimi Code" src="https://img.shields.io/badge/Kimi_Code-171717" /></a>
 </p>
 
 <p align="center">
@@ -41,6 +43,7 @@
   <strong>快速导航：</strong>
   <a href="#界面预览">界面预览</a> •
   <a href="#快速使用">快速使用</a> •
+  <a href="#模型与设置">模型与设置</a> •
   <a href="#功能状态">功能状态</a> •
   <a href="#跨-agent-协作">跨 Agent 协作</a> •
   <a href="#远程连接-harness">远程连接</a> •
@@ -51,7 +54,7 @@
 
 ## 界面预览
 
-无需切换应用，**Pi、Claude Code、OpenCode、OMP、Grok Build 和 DeepSeek Harness** 都可以在同一个 Codex Desktop 窗口中直接使用。
+无需切换应用，**Pi、Cursor、Qoder、Kimi Code、Claude Code、OpenCode、OMP、Grok 和 DeepSeek Harness** 等 Harness 都可以在同一个 Codex Desktop 窗口中使用。各自使用原生会话、工具和认证。
 
 https://github.com/user-attachments/assets/c48192d7-23ff-4f6e-b61a-6345a655bb76
 
@@ -116,23 +119,68 @@ xattr -dr com.apple.quarantine /Applications/codexhost.app
   </tr>
 </table>
 
+## 模型与设置
+
+点击右上角 **CodexHost** 打开设置。先在“连接”中检查本机 Harness 的安装与登录状态，再从输入框选择 Harness 和模型。
+
+### 模型选择与隐藏
+
+“设置 → 模型”支持 **Pi、Qoder、Cursor、Grok、Kimi Code**：可以搜索模型、逐个显示或隐藏，也可以一键全部隐藏、全部显示。隐藏仅影响 CodexHost 的模型菜单，不删除原生配置，也不改变已有会话；偏好在正常退出、重新启动及重新构建后保留。
+
+模型目录来自当前 Harness 的原生接口或配置。原生新增模型后，通过目录刷新获取，不维护另一份固定模型清单。
+
+- **Cursor**：按 ACP 返回的配置提供 Fast、Thinking、Context、Effort 等选项；仅展示当前模型实际提供的参数。
+- **Kimi Code**：模型与 Effort 使用原生目录，只显示一套思考强度选择器。Highspeed、256k 等保留为原生模型选项。
+- **交互**：模型、参数和权限选择先更新前端待发送配置，真正发送时应用到会话；首次发现模型或恢复原生会话仍可能需要等待。
+
+### 权限与 Pi 扩展
+
+执行模式和审批方式分组展示，选项取决于 Harness 原生能力。Kimi Code 支持 Agent / 计划模式，以及需要审批 / 按需审批 / 自动执行；使用不同图标区分。
+
+Pi 用户可在“设置 → 模型”安装专用工具审批扩展或 Codex Fast 扩展。页面显示安装状态，扩展用于新会话，不修改 Pi 全局配置。Fast 仅对受支持的 Codex 模型提供，默认关闭。
+
+### 账号额度与会话导入
+
+“设置 → 账号”按原生返回的窗口显示额度，不固定为 5 小时或 7 天：Cursor 显示 Auto / API 月额度，Qoder 显示套餐 Credits 和可用的共享资源包，Kimi Code 显示订阅额度及刷新时间。账户额度与单次会话 Usage 分开，不互相换算。
+
+“设置 → 会话导入”支持已接入的原生会话来源，包括 Pi、Qoder、Grok、Cursor 和 Kimi Code。本地未安装或在连接页隐藏的 Harness 不显示为可选来源。导入保留原项目路径与原生会话身份；运行状态未知时，应先在原生客户端关闭该会话，避免同时写入。
+
+Kimi Code 当前适配新版 **0.42.x Server API**，不兼容旧 Python kimi-cli；详细实现、验证范围和限制见 [Kimi Code 接入与验收](docs/kimi-code-integration-plan.md)。本节和下表描述当前源码能力，安装包是否包含这些功能取决于发行版本。
+
 ## 功能状态
 
-| 能力 | <a href="https://openai.com/codex/"><img alt="Codex" src="docs/imgs/harness-icon-codex.svg" /></a> | <a href="https://pi.dev/"><img alt="Pi" src="https://img.shields.io/badge/-000000?logo=pi&logoColor=white" /></a> | <a href="https://github.com/can1357/oh-my-pi"><img alt="Oh My Pi" src="docs/imgs/harness-icon-omp-v5.svg" /></a> | <a href="https://code.claude.com/docs/en/quickstart"><img alt="Claude Code" src="https://img.shields.io/badge/-D97757?logo=claudecode&logoColor=white" /></a> | <a href="https://opencode.ai/docs/"><img alt="OpenCode" src="docs/imgs/harness-icon-opencode.svg" /></a> | <a href="https://grok.com/"><img alt="Grok" src="https://img.shields.io/badge/-000000?logo=x&logoColor=white" /></a> | <a href="https://github.com/deepseek-ai/deepseek-harness"><img alt="DeepSeek Harness" src="https://img.shields.io/badge/-4D6BFE?logo=deepseek&logoColor=white" /></a> | <a href="https://antigravity.google/product/antigravity-cli"><img alt="AGY" src="docs/imgs/harness-icon-agy.svg" /></a> | <a href="https://www.codebuddy.cn/home/"><img alt="CodeBuddy" src="docs/imgs/harness-icon-codebuddy.svg" /></a> | <a href="https://cursor.com/docs/cli/overview"><img alt="Cursor" src="docs/imgs/harness-icon-cursor.svg" /></a> | <a href="https://hermes-agent.nousresearch.com/docs"><img alt="Hermes" src="docs/imgs/harness-icon-hermes.svg" /></a> |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| 流式回复 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 工具状态 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Edit Diff | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
-| 提问 / 取消 | 原生 | ✅ | — / ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — / ✅ |
-| Model / Thinking 选择 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ / — | ✅ / — |
-| 工具审批 | 原生 | ✅ | — | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
-| 权限模式 | 原生 | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Agent 间任务协作 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ |
-| Usage | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ |
-| Fork | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| 上下文压缩 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
-| 斜杠命令 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| 修订上一条消息 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| 能力 | <a href="https://openai.com/codex/"><img alt="Codex" src="docs/imgs/harness-icon-codex.svg" /></a> | <a href="https://pi.dev/"><img alt="Pi" src="https://img.shields.io/badge/-000000?logo=pi&logoColor=white" /></a> | <a href="https://github.com/can1357/oh-my-pi"><img alt="Oh My Pi" src="docs/imgs/harness-icon-omp-v5.svg" /></a> | <a href="https://code.claude.com/docs/en/quickstart"><img alt="Claude Code" src="https://img.shields.io/badge/-D97757?logo=claudecode&logoColor=white" /></a> | <a href="https://opencode.ai/docs/"><img alt="OpenCode" src="docs/imgs/harness-icon-opencode.svg" /></a> | <a href="https://grok.com/"><img alt="Grok" src="https://img.shields.io/badge/-000000?logo=x&logoColor=white" /></a> | <a href="https://github.com/deepseek-ai/deepseek-harness"><img alt="DeepSeek Harness" src="https://img.shields.io/badge/-4D6BFE?logo=deepseek&logoColor=white" /></a> | <a href="https://antigravity.google/product/antigravity-cli"><img alt="AGY" src="docs/imgs/harness-icon-agy.svg" /></a> | <a href="https://www.codebuddy.cn/home/"><img alt="CodeBuddy" src="docs/imgs/harness-icon-codebuddy.svg" /></a> | <a href="https://cursor.com/docs/cli/overview"><img alt="Cursor" src="docs/imgs/harness-icon-cursor.svg" /></a> | <a href="https://hermes-agent.nousresearch.com/docs"><img alt="Hermes" src="docs/imgs/harness-icon-hermes.svg" /></a> | <a href="https://docs.qoder.com/"><img alt="Qoder" src="packages/adapters/qoder/assets/icon.svg" /></a> | <a href="https://moonshotai.github.io/kimi-code/en/"><img alt="Kimi Code" src="packages/adapters/kimi-code/assets/icon.svg" width="28" /></a> |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| 流式回复 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 工具状态 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Edit Diff | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅⁶ |
+| 提问 / 取消 | 原生 | ✅ | — / ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — / ✅ | ✅ | ✅ |
+| Model / Thinking 选择 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅¹ | ✅ / — | ✅ | ✅¹ |
+| 工具审批 | 原生 | ✅ | — | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 权限模式 | 原生 | ✅⁷ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Agent 间任务协作 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅⁸ | ✅ | ✅ | ✅² |
+| Usage | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅³ |
+| Fork | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | ✅ | ✅⁴ |
+| 上下文压缩 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — | ✅ | ✅ |
+| 斜杠命令 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅⁸ | — | ✅⁵ | ✅⁵ |
+| 修订上一条消息 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | ✅ | ✅⁴ |
+
+¹ Kimi 的思考强度通过 **Effort** 控制，只显示一套选择器；可用值来自当前模型。Highspeed、256k 是原生模型选项，不伪造独立 Fast 或上下文开关。Cursor 通过原生 ACP `configOptions` 提供模型参数，以实际返回的选项为准。
+
+² Kimi 支持原生子 Agent 的状态、结果和历史读取。跨 Harness 委派使用公共 Host 路径，与原生子 Agent 是不同能力。
+
+³ Kimi 会话 Usage 展示原生输入、输出、缓存 Token 和上下文用量；账号页显示原生订阅额度和刷新时间，不将订阅额度换算成会话花费。
+
+⁴ Kimi Fork 保留截至指定轮次（含该轮次）的完整前缀；修订上一条消息先派生副本，再撤回副本的最后一轮。两者不回滚工作区文件；不能跨工作目录，原生压缩边界之前不可撤回时会明确失败。
+
+⁵ Kimi 接入 `/compact`；Qoder 仅开放当前原生 Headless 接口可执行的命令，不把 TUI 专用命令标成可用。
+
+⁶ Kimi Edit Diff 使用原生按轮次保存的文件历史，支持文本文件新增、修改和删除；二进制、原生超限或未记录的内容不生成猜测 Diff。
+
+⁷ Pi 的审批策略需要在设置 → 模型中安装专用审批扩展；原生没有 Agent/Plan 模式时不补造同名开关。
+
+⁸ Cursor 可观察原生子任务状态；完整子任务 Transcript 不可用。斜杠命令仅展示 ACP 实际发布的可执行项，不能据此承诺所有 TUI 命令或上下文压缩。
+
 
 ## 跨 Agent 协作
 
@@ -192,13 +240,11 @@ Windows 作为被控 Host 时，可以保留 Codex Desktop 官方配对、账号
 <details>
 <summary><h3>怎么做的</h3></summary>
 
-多数「多 Agent 客户端」通过 [ACP](https://agentclientprotocol.com/) 协议接入不同 Harness。接入快，但工具、审批、权限、Diff、提问等原生能力会先被削平。
-
-CodexHost 尽量不走这条路：
+CodexHost 按各 Harness 实际提供的接口接入，包括 RPC、SDK、[ACP](https://agentclientprotocol.com/) 和原生 Server API：
 
 - **Desktop 侧**：用 CDP / Electron Inspector 在官方 Codex Desktop 上增强 Agent 选择与会话界面，不重做聊天壳，也不改官方安装包
 - **协议侧**：用 CLI Shim 透明接入官方 app-server；Codex 请求原样转发
-- **Harness 侧**：按各自原生接口接入。Pi 走官方 RPC，Claude Code 走 Agent SDK / CLI，再投影到 Desktop 已有的流式输出、工具、Diff、审批和提问
+- **Harness 侧**：按各自原生接口接入。Pi 走官方 RPC，Claude Code、Qoder 走原生 SDK / CLI，Cursor 走 ACP，Kimi Code 走 Server REST / WebSocket，再投影到 Desktop 已有的流式输出、工具、Diff、审批和提问
 - **编排侧**：为被委派的 Harness 创建独立 Native Session 与普通可写 Thread，并单独保存委派关系。创建与结果观察彼此分离，发起方显式选择读取、等待或后台运行
 
 目标是保真，不只「能聊」。流式、工具状态、可靠 Patch、原生审批和提问，都尽量来自 Harness 自己，而不是 Host 猜测或伪造。

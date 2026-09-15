@@ -78,8 +78,10 @@ Write-Output "codexhost dev: stopped $($desktopProcessIds.Count) Codex Desktop p
 const macOsDesktopCleanupScript = String.raw`
 set -eu
 
-system_desktop_pattern='^/Applications/(ChatGPT|Codex)\.app/Contents/'
-user_desktop_pattern="^$HOME/Applications/(ChatGPT|Codex)\.app/Contents/"
+# Resources also contains independent tooling processes; only the app executable
+# determines whether Desktop has quit.
+system_desktop_pattern='^/Applications/(ChatGPT|Codex)\.app/Contents/MacOS/[^/ ]+($| )'
+user_desktop_pattern="^$HOME/Applications/(ChatGPT|Codex)\.app/Contents/MacOS/[^/ ]+($| )"
 desktop_running() {
   /usr/bin/pgrep -f "$system_desktop_pattern" >/dev/null 2>&1 ||
     /usr/bin/pgrep -f "$user_desktop_pattern" >/dev/null 2>&1

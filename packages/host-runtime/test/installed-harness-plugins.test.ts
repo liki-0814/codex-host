@@ -23,6 +23,7 @@ const classes = {
   "cursor-cli": "CursorAdapter",
   hermes: "HermesAdapter",
   qoder: "QoderAdapter",
+  "kimi-code": "KimiCodeAdapter",
 };
 
 const unavailable: HarnessInspection = {
@@ -121,6 +122,7 @@ describe("installed Harness composition", () => {
       ],
       hermes: [],
       qoder: ["/compact"],
+      "kimi-code": ["/compact"],
     };
     const registry = await load();
     try {
@@ -150,6 +152,7 @@ describe("installed Harness composition", () => {
     ["cursor-cli", "CODEXHOST_CURSOR_COMMAND"],
     ["hermes", "CODEXHOST_HERMES_COMMAND"],
     ["qoder", "CODEXHOST_QODER_COMMAND"],
+    ["kimi-code", "CODEXHOST_KIMI_CODE_COMMAND"],
   ])(
     "preserves the explicit %s command rather than finding another local installation",
     async (id, commandVariable) => {

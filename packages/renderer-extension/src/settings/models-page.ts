@@ -14,6 +14,7 @@ export type RendererModelsClient = Pick<RendererModelClient, "inspectHarness" | 
 const HARNESSES = [
   ["pi", "Pi"],
   ["qoder", "Qoder"],
+  ["kimi-code", "Kimi Code"],
   ["cursor-cli", "Cursor"],
   ["grok", "Grok"],
 ] as const;
