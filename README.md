@@ -167,7 +167,7 @@ Kimi Code 当前适配新版 **0.42.x Server API**，不兼容旧 Python kimi-cl
 
 ¹ Kimi 的思考强度通过 **Effort** 控制，只显示一套选择器；可用值来自当前模型。Highspeed、256k 是原生模型选项，不伪造独立 Fast 或上下文开关。Cursor 通过原生 ACP `configOptions` 提供模型参数，以实际返回的选项为准。
 
-² Kimi 支持原生子 Agent 的状态、结果和历史读取。跨 Harness 委派使用公共 Host 路径，与原生子 Agent 是不同能力。
+² Kimi 支持原生子 Agent 的状态、结果和历史读取。跨 Harness 委派使用公共 Host 路径，已实测 Kimi → Qoder → Kimi 及同一 Kimi 子会话续发；与原生子 Agent 是不同能力。
 
 ³ Kimi 会话 Usage 展示原生输入、输出、缓存 Token 和上下文用量；账号页显示原生订阅额度和刷新时间，不将订阅额度换算成会话花费。
 
