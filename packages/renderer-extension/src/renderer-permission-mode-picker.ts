@@ -8,7 +8,12 @@ import createElement from "lucide/dist/esm/createElement.mjs";
 import Check from "lucide/dist/esm/icons/check.mjs";
 import ChevronDown from "lucide/dist/esm/icons/chevron-down.mjs";
 import Lock from "lucide/dist/esm/icons/lock.mjs";
-import Shield from "lucide/dist/esm/icons/shield.mjs";
+import Hand from "lucide/dist/esm/icons/hand.mjs";
+import Terminal from "lucide/dist/esm/icons/terminal.mjs";
+import ListChecks from "lucide/dist/esm/icons/list-checks.mjs";
+import MessageCircle from "lucide/dist/esm/icons/message-circle.mjs";
+import Pencil from "lucide/dist/esm/icons/pencil.mjs";
+import SlidersHorizontal from "lucide/dist/esm/icons/sliders-horizontal.mjs";
 import ShieldAlert from "lucide/dist/esm/icons/shield-alert.mjs";
 
 import {
@@ -46,6 +51,7 @@ export interface RendererPermissionModePickerControl {
   root: HTMLElement;
   trigger: HTMLButtonElement;
   label: HTMLElement;
+  modeIcon: HTMLElement;
   chevron: HTMLElement;
   lockMark: HTMLElement;
   menu: HTMLElement;
@@ -53,6 +59,17 @@ export interface RendererPermissionModePickerControl {
   locale: RendererSettingsLocale;
   close(): void;
   dispose(): void;
+}
+
+function permissionIcon(mode?: HarnessPermissionMode): IconNode {
+  if (mode?.dangerous) return ShieldAlert;
+  const name = (mode?.label ?? "").toLowerCase();
+  if (/plan|规划|计划/.test(name)) return ListChecks;
+  if (/^ask$|^询问$/.test(name) && mode?.values) return MessageCircle;
+  if (/auto|agent|自动执行/.test(name)) return Terminal;
+  if (/edit|编辑/.test(name)) return Pencil;
+  if (/ask|approve|approval|default|审批|批准/.test(name)) return Hand;
+  return SlidersHorizontal;
 }
 
 function icon(node: IconNode, size: number): SVGElement {
@@ -163,7 +180,7 @@ export function mountRendererPermissionModePicker(
 
   const shield = document.createElement("span");
   shield.className = "inline-flex shrink-0 items-center";
-  shield.append(icon(Shield, 15));
+  shield.append(icon(Hand, 15));
 
   const label = document.createElement("span");
   label.className = "truncate";
@@ -291,6 +308,7 @@ export function mountRendererPermissionModePicker(
   const control: RendererPermissionModePickerControl = {
     root,
     trigger,
+    modeIcon: shield,
     label,
     chevron,
     lockMark,
@@ -383,10 +401,10 @@ function rebuildOptions(
     }
     if (mode.dangerous) button.style.color = "var(--color-text-danger, #c2413b)";
 
-    if (!grouped) {
+    {
       const modeIcon = document.createElement("span");
       modeIcon.className = "inline-flex h-5 w-5 shrink-0 items-center justify-center";
-      modeIcon.append(icon(mode.dangerous ? ShieldAlert : Shield, 17));
+      modeIcon.append(icon(permissionIcon(mode), 17));
       button.append(modeIcon);
     }
 
@@ -444,6 +462,11 @@ export function renderRendererPermissionModePicker(
   }
   const label = rendererPermissionModeLabel(view, locale);
   if (control.label.textContent !== label) control.label.textContent = label;
+  const selectedMode = view.catalog?.modes.find((mode) => mode.id === view.selected);
+  if (control.modeIcon.dataset.mode !== view.selected) {
+    control.modeIcon.replaceChildren(icon(permissionIcon(selectedMode), 15));
+    control.modeIcon.dataset.mode = view.selected ?? "";
+  }
   const locked = view.selectionLocked === true;
   control.trigger.title = locked
     ? (view.selectionLockedReason ?? label)

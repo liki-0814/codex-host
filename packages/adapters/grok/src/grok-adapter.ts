@@ -1466,6 +1466,8 @@ export class GrokAdapter implements HarnessAdapter {
   readonly #fetchCredits: (input: {
     environment?: NodeJS.ProcessEnv;
   }) => Promise<GrokCreditsSnapshot | null>;
+  readonly #inspections = new Map<string, Promise<HarnessInspection>>();
+  readonly #inspectionCleanup = new Set<Promise<void>>();
   readonly #inspectionCache = new Map<string, Extract<HarnessInspection, { status: "ready" }>>();
   readonly #sessions = new Set<GrokHarnessSession>();
   readonly #toolOutputLimit: number;
@@ -1540,6 +1542,14 @@ export class GrokAdapter implements HarnessAdapter {
       const cached = this.#inspectionCache.get(cwd);
       if (cached) return cached;
     }
+    const pending = this.#inspections.get(cwd);
+    if (pending) return pending;
+    const inspection = this.#inspect(cwd).finally(() => this.#inspections.delete(cwd));
+    this.#inspections.set(cwd, inspection);
+    return inspection;
+  }
+
+  async #inspect(cwd: string): Promise<HarnessInspection> {
     let transport: GrokAcpTransportLike | null = null;
     const startedAt = Date.now();
     let stage = "spawn";
@@ -1551,18 +1561,16 @@ export class GrokAdapter implements HarnessAdapter {
       const modelState = modelStateFromInitialize(initialize);
       if (!modelState)
         throw new GrokTransportError("protocolError", "Grok returned an invalid Model catalog");
-      await transport.close();
       const ready: Extract<HarnessInspection, { status: "ready" }> = {
         status: "ready",
         catalog: modelState.catalog,
         permissionModes: GROK_PERMISSION_MODE_CATALOG,
         capabilities: capabilitiesForModels(modelState),
       };
-      this.#inspectionCache.set(cwd, ready);
+      if (!this.#closePromise) this.#inspectionCache.set(cwd, ready);
       this.#scheduleCreditsRefresh();
       return ready;
     } catch (error) {
-      await transport?.close().catch(() => undefined);
       const normalized = normalizeError(error, "unavailable");
       return {
         status: normalized.code === "notInstalled" ? "notInstalled" : "error",
@@ -1575,6 +1583,13 @@ export class GrokAdapter implements HarnessAdapter {
             : { stderrTail: transport.stderrTail }),
         },
       };
+    } finally {
+      if (transport) {
+        // Native shutdown can take seconds; catalog consumers need not wait for it.
+        const cleanup = transport.close().catch(() => undefined);
+        this.#inspectionCleanup.add(cleanup);
+        void cleanup.finally(() => this.#inspectionCleanup.delete(cleanup));
+      }
     }
   }
 
@@ -1849,9 +1864,13 @@ export class GrokAdapter implements HarnessAdapter {
     if (!this.#closePromise) {
       this.#accountAbort.abort();
       this.#inspectionCache.clear();
-      this.#closePromise = Promise.all([...this.#sessions].map((session) => session.close())).then(
-        () => undefined,
-      );
+      this.#closePromise = (async () => {
+        await Promise.all(this.#inspections.values());
+        await Promise.all([
+          ...this.#inspectionCleanup,
+          ...[...this.#sessions].map((session) => session.close()),
+        ]);
+      })();
     }
     return this.#closePromise;
   }

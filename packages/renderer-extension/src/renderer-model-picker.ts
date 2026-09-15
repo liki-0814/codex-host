@@ -12,7 +12,6 @@ import type {
 import {
   rendererModelPickerMainMenuPlacement,
   rendererModelPickerBottomAlignedMenuPlacement,
-  rendererModelPickerModelMenuPlacement,
   rendererModelPickerStandaloneModelMenuPlacement,
   RENDERER_MODEL_PICKER_MAIN_MENU_WIDTH,
   RENDERER_MODEL_PICKER_MODEL_MENU_MAX_HEIGHT,
@@ -213,9 +212,7 @@ function positionModelMenu(control: RendererModelPickerControl, standalone = fal
         width: window.innerWidth,
         height: window.innerHeight,
       })
-    : (control.menu.querySelector("[data-model-configuration]")
-        ? rendererModelPickerBottomAlignedMenuPlacement
-        : rendererModelPickerModelMenuPlacement)(anchorRect, {
+    : rendererModelPickerBottomAlignedMenuPlacement(anchorRect, {
         width: window.innerWidth,
         height: window.innerHeight,
       });

@@ -319,6 +319,49 @@ describe("Grok Adapter ACP projection", () => {
     );
     await adapter.close();
   });
+  it("shares concurrent inspections and returns before cleanup while close drains it", async () => {
+    const transport = new FakeGrokTransport();
+    let finishInspection!: (value: InitializeResponse) => void;
+    let finishCleanup!: () => void;
+    vi.spyOn(transport, "inspect").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishInspection = resolve;
+        }),
+    );
+    transport.close.mockImplementation(
+      () =>
+        new Promise<undefined>((resolve) => {
+          finishCleanup = () => resolve(undefined);
+        }),
+    );
+    const createTransport = vi.fn(() => transport);
+    const adapter = new GrokAdapter(
+      {},
+      {
+        randomUUID: () => "grok-id",
+        createTransport,
+        fetchCredits: async () => null,
+      },
+    );
+    const first = adapter.inspect({ cwd: "/synthetic" });
+    const second = adapter.inspect({ cwd: "/synthetic", refresh: true });
+    expect(createTransport).toHaveBeenCalledTimes(1);
+    finishInspection(initialize);
+    expect((await first).status).toBe("ready");
+    expect(await second).toBe(await first);
+    expect(await adapter.inspect({ cwd: "/synthetic" })).toBe(await first);
+    let closed = false;
+    const closing = adapter.close().then(() => {
+      closed = true;
+    });
+    await Promise.resolve();
+    expect(closed).toBe(false);
+    finishCleanup();
+    await closing;
+    expect(transport.close).toHaveBeenCalledTimes(1);
+  });
+
   it("reports a single available Grok Model as selectable", async () => {
     const transport = new FakeGrokTransport();
     const adapter = new GrokAdapter(
