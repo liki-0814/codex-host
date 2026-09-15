@@ -12,7 +12,9 @@ export function installRendererBinding(
   window.__codexhostRendererBindingProbeV1?.dispose();
   const binding = installRendererBindingProbe({ enabledAgents, defaultAgent });
   try {
-    const adapter = installCurrentRendererAdapter();
+    const adapter = installCurrentRendererAdapter((hostId, threadId) =>
+      binding.lockedSelection(hostId, threadId),
+    );
     binding.setAdapter(adapter.status, adapter.dispose, adapter.applyAgent, adapter.modelControl);
   } catch (error) {
     console.error(

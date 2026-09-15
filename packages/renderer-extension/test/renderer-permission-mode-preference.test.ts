@@ -1,4 +1,8 @@
 import {
+  readThreadPermissionModePreference,
+  writeThreadPermissionModePreference,
+} from "../src/renderer-permission-mode-preference.js";
+import {
   harnessPermissionModeCatalogSchema,
   harnessPermissionModeIdSchema,
 } from "@codexhost/shared-contracts";
@@ -44,5 +48,46 @@ describe("Claude Permission Mode preference", () => {
     storage.values.set(CLAUDE_PERMISSION_MODE_PREFERENCE_KEY, "removed-mode");
 
     expect(readClaudePermissionModePreference(catalog, storage)).toBeUndefined();
+  });
+});
+
+describe("deferred Thread Permission Mode preference", () => {
+  const target = { hostId: "local", threadId: "kimi-thread", agent: "kimi-code" };
+  const modes = harnessPermissionModeCatalogSchema.parse({
+    defaultModeId: "agent.manual",
+    modes: [
+      { id: "agent.manual", label: "Manual" },
+      { id: "agent.auto", label: "Auto" },
+    ],
+  });
+  const auto = harnessPermissionModeIdSchema.parse("agent.auto");
+
+  it("restores the choice after a Composer is discarded without changing another Thread or Host", () => {
+    const storage = memoryStorage();
+    writeThreadPermissionModePreference(target, auto, storage);
+    const remountedStorage = { getItem: storage.getItem, setItem: storage.setItem };
+    expect(readThreadPermissionModePreference({ ...target }, modes, remountedStorage)).toBe(auto);
+    for (const other of [
+      { ...target, threadId: "other-thread" },
+      { ...target, hostId: "remote" },
+      { ...target, agent: "cursor-cli" },
+    ])
+      expect(readThreadPermissionModePreference(other, modes, remountedStorage)).toBeUndefined();
+  });
+
+  it("ignores removed modes and tolerates unavailable storage", () => {
+    const storage = memoryStorage();
+    writeThreadPermissionModePreference(target, auto, storage);
+    expect(readThreadPermissionModePreference(target, catalog, storage)).toBeUndefined();
+    const unavailable = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    expect(() => writeThreadPermissionModePreference(target, auto, unavailable)).not.toThrow();
+    expect(readThreadPermissionModePreference(target, modes, unavailable)).toBeUndefined();
   });
 });

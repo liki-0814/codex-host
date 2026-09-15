@@ -69,6 +69,8 @@ import { thinkingOptionsForModel } from "./renderer-model-picker.js";
 import { RENDERER_AGENT_INSTALL_URLS } from "./renderer-agent-picker.js";
 import {
   readClaudePermissionModePreference,
+  readThreadPermissionModePreference,
+  writeThreadPermissionModePreference,
   writeClaudePermissionModePreference,
 } from "./renderer-permission-mode-preference.js";
 import { isPermissionModeControlReady } from "./renderer-permission-mode-picker.js";
@@ -273,7 +275,7 @@ type ApplyAdapterAgent = (
 
 export interface RendererBindingProbeApi {
   status(): RendererBindingProbeStatus;
-  lockedSelection(): LockedComposerSelection | null;
+  lockedSelection(hostId?: string, threadId?: string): LockedComposerSelection | null;
   setAdapter(
     status: RendererAdapterStatus,
     dispose?: () => void,
@@ -1241,6 +1243,12 @@ export function installRendererBindingProbe(
       return true;
     }
     if (resolution === "transfer") {
+      const threadId = threadIdFromComposerModelTarget(currentTarget);
+      if (threadId && mounted.hostId && mounted.stagedPermissionModeId)
+        writeThreadPermissionModePreference(
+          { hostId: mounted.hostId, threadId, agent: controller.get(mounted.composer).agent },
+          mounted.stagedPermissionModeId,
+        );
       mounted.ownershipStatus = "ready";
       renderMounted(mounted);
       if (shouldRetryExternalThreadUsage(controller.get(mounted.composer).agent, null, null)) {
@@ -1388,6 +1396,16 @@ export function installRendererBindingProbe(
           (agent === "claude-code"
             ? readClaudePermissionModePreference(permissionModes)
             : undefined);
+        const threadId = threadIdFromComposerModelTarget(mounted.modelTarget);
+        const savedPermissionModeId =
+          permissionModes.dimensions && threadId && mounted.hostId
+            ? readThreadPermissionModePreference(
+                { hostId: mounted.hostId, threadId, agent },
+                permissionModes,
+              )
+            : undefined;
+        if (savedPermissionModeId && !mounted.stagedPermissionModeId)
+          mounted.stagedPermissionModeId = savedPermissionModeId;
         selectedPermissionModeId = draftPermissionMode(
           permissionModes,
           mounted.stagedPermissionModeId ??
@@ -1786,6 +1804,12 @@ export function installRendererBindingProbe(
         return;
       controller.setExternalPermissionMode(mounted.composer, agent, selectedPermissionModeId);
       mounted.stagedPermissionModeId = selectedPermissionModeId;
+      const threadId = threadIdFromComposerModelTarget(mounted.modelTarget);
+      if (threadId && mounted.hostId)
+        writeThreadPermissionModePreference(
+          { hostId: mounted.hostId, threadId, agent },
+          selectedPermissionModeId,
+        );
       mounted.permissionModeView = { status: "ready", catalog, selected: selectedPermissionModeId };
       if (current.phase === "draft")
         writeNewThreadExternalConfigurationPreference(
@@ -2840,10 +2864,16 @@ export function installRendererBindingProbe(
         adapter: { ...adapterStatus },
       };
     },
-    lockedSelection() {
+    lockedSelection(hostId, threadId) {
       const locked = connectedComposers()
         .map((mounted) => ({ mounted, state: controller.get(mounted.composer) }))
-        .filter(({ state }) => state.phase === "locked");
+        .filter(
+          ({ mounted, state }) =>
+            state.phase === "locked" &&
+            mounted.ownershipStatus === "ready" &&
+            (hostId === undefined || mounted.hostId === hostId) &&
+            (threadId === undefined || mounted.modelTarget?.[1] === threadId),
+        );
       const entry = locked[0];
       if (locked.length !== 1 || !entry) return null;
       const { mounted, state: selection } = entry;

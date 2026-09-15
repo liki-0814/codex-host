@@ -137,6 +137,7 @@ async function preserveQueuedFollowUps(
 export function installRendererExternalSteering(
   target: unknown,
   refreshRequestBridge?: () => boolean,
+  modelForThread?: (threadId: string) => string | null,
 ): (() => void) | null {
   if (!isManager(target)) return null;
   const manager = target;
@@ -151,6 +152,12 @@ export function installRendererExternalSteering(
 
   const send: RendererMethod = function (method, params, options) {
     refreshRequestBridge?.();
+    // Existing Threads keep their native Renderer state. Carry the current external
+    // selection only when sending, without a configuration RPC on every click.
+    if (method === "turn/start" && isRecord(params) && typeof params.threadId === "string") {
+      const model = modelForThread?.(params.threadId);
+      if (model) params = { ...params, model };
+    }
     const messageId = isRecord(params) ? params.clientUserMessageId : null;
     const route =
       typeof messageId === "string" && isRecord(params)

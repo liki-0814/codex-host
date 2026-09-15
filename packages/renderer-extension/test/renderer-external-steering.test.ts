@@ -277,3 +277,27 @@ describe("external direction changes use normal Desktop start presentation", () 
     f.dispose();
   });
 });
+
+describe("external per-turn configuration", () => {
+  it("carries the current selection only for its Thread and preserves the caller params", async () => {
+    const f = fixture();
+    f.dispose?.();
+    let model = "kimi-agent-auto";
+    const cleanup = installRendererExternalSteering(f.manager, undefined, (threadId) =>
+      threadId === "thread" ? model : null,
+    );
+    const params = { threadId: "thread", model: "old", input: [] };
+    await f.manager.sendRequest("turn/start", params);
+    expect(f.rpc).toHaveBeenLastCalledWith("turn/start", { ...params, model }, undefined);
+    expect(params.model).toBe("old");
+    model = "kimi-agent-manual";
+    await f.manager.sendRequest("turn/start", params);
+    expect(f.rpc).toHaveBeenLastCalledWith("turn/start", { ...params, model }, undefined);
+    const other = { ...params, threadId: "other" };
+    await f.manager.sendRequest("turn/start", other);
+    expect(f.rpc).toHaveBeenLastCalledWith("turn/start", other, undefined);
+    await f.manager.sendRequest("thread/read", params);
+    expect(f.rpc).toHaveBeenLastCalledWith("thread/read", params, undefined);
+    cleanup?.();
+  });
+});

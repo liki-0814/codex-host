@@ -1004,7 +1004,9 @@ export function modelSelectionForAgent(
   return transportModelId ? { model: transportModelId, reasoningEffort } : officialSelection;
 }
 
-export function installCurrentRendererAdapter(): {
+export function installCurrentRendererAdapter(
+  selectionForThread?: (hostId: string, threadId: string) => LockedComposerSelection | null,
+): {
   status: RendererAdapterStatus;
   modelControl: RendererModelClient | null;
   applyAgent(
@@ -1068,6 +1070,20 @@ export function installCurrentRendererAdapter(): {
         const steeringCleanup = installRendererExternalSteering(
           target,
           policy?.refreshRequestBridge,
+          (threadId) => {
+            const hostId = prewarmTargetHostId(target);
+            const selection = hostId ? selectionForThread?.(hostId, threadId) : null;
+            if (!selection || selection.agent === "codex") return null;
+            const carrier = modelSelectionForAgent(
+              null,
+              undefined,
+              selection.agent,
+              selection.model,
+              selection.thinkingOptionId,
+              selection.permissionModeId,
+            );
+            return typeof carrier?.model === "string" ? carrier.model : null;
+          },
         );
         if (steeringCleanup) turnControlCleanups.add(steeringCleanup);
       }
