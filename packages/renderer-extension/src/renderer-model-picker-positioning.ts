@@ -110,3 +110,20 @@ export function rendererModelPickerModelMenuPlacement(
     maxHeight,
   };
 }
+
+/** Align bottoms without imposing equal heights on the two menus. */
+export function rendererModelPickerBottomAlignedMenuPlacement(
+  mainRect: RendererMenuRect & { bottom: number },
+  viewport: RendererViewport,
+): RendererMenuPlacement {
+  const placement = rendererModelPickerModelMenuPlacement(mainRect, viewport);
+  return {
+    left: placement.left,
+    width: placement.width,
+    bottom: Math.max(COLLISION_PADDING, viewport.height - mainRect.bottom),
+    maxHeight: Math.max(
+      COLLISION_PADDING,
+      Math.min(RENDERER_MODEL_PICKER_MODEL_MENU_MAX_HEIGHT, mainRect.bottom - COLLISION_PADDING),
+    ),
+  };
+}

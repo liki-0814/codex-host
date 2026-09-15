@@ -24,6 +24,7 @@ export const harnessPermissionModeSchema = z
     label: nonBlankTextSchema.max(HARNESS_PERMISSION_MODE_LABEL_MAX_LENGTH),
     description: nonBlankTextSchema.max(HARNESS_PERMISSION_MODE_DESCRIPTION_MAX_LENGTH).optional(),
     dangerous: z.boolean().optional(),
+    values: z.record(z.string(), z.string()).optional(),
   })
   .strict();
 
@@ -36,6 +37,9 @@ export const harnessPermissionModeCatalogSchema = z
       .min(1)
       .max(HARNESS_PERMISSION_MODE_CATALOG_MAX_LENGTH),
     defaultModeId: harnessPermissionModeIdSchema,
+    dimensions: z
+      .array(z.object({ id: nonBlankTextSchema, label: nonBlankTextSchema }).strict())
+      .optional(),
   })
   .strict()
   .superRefine((catalog, context) => {
@@ -49,6 +53,20 @@ export const harnessPermissionModeCatalogSchema = z
         });
       }
       ids.add(mode.id);
+    }
+    if (catalog.dimensions) {
+      const dimensions = new Set(catalog.dimensions.map((d) => d.id));
+      const combinations = new Set<string>();
+      if (dimensions.size !== catalog.dimensions.length)
+        context.addIssue({ code: "custom", message: "Permission dimensions must be unique" });
+      for (const mode of catalog.modes) {
+        if (catalog.dimensions.some((d) => !mode.values?.[d.id]))
+          context.addIssue({ code: "custom", message: "Permission dimensions must have values" });
+        const key = JSON.stringify(catalog.dimensions.map((d) => mode.values?.[d.id]));
+        if (combinations.has(key))
+          context.addIssue({ code: "custom", message: "Permission combinations must be unique" });
+        combinations.add(key);
+      }
     }
     if (!ids.has(catalog.defaultModeId)) {
       context.addIssue({

@@ -5,7 +5,6 @@ import { createRendererAgentIcon } from "../renderer-agent-icon.js";
 import { codexAccountDisplayName } from "../renderer-codex-account-options.js";
 import { createAccountDetails } from "./accounts-details.js";
 import {
-  accountUsageColumnLabel,
   renderAccountResetCredits,
   renderAccountUsage,
   type AccountUsageDisplay,
@@ -66,7 +65,7 @@ export function createAccountsTable(document: Document, messages: RendererSettin
   table.setAttribute("aria-label", messages.pageLabels.accounts);
   const head = document.createElement("thead");
   const row = document.createElement("tr");
-  const headers = Array.from({ length: 4 }, () => {
+  const headers = Array.from({ length: 3 }, () => {
     const cell = document.createElement("th");
     cell.scope = "col";
     row.append(cell);
@@ -75,8 +74,7 @@ export function createAccountsTable(document: Document, messages: RendererSettin
   const updateDisplay = (display: AccountUsageDisplay): void => {
     const labels = [
       messages.accountColumnAccount,
-      accountUsageColumnLabel("five_hour", display, messages),
-      accountUsageColumnLabel("seven_day", display, messages),
+      display === "remaining" ? messages.accountCreditsRemaining : messages.accountCreditsUsed,
       messages.accountColumnActions,
     ];
     headers.forEach((cell, index) => {
@@ -231,7 +229,7 @@ export function renderAccountRows(
   detailsRow.id = `settings-account-reset-${++resetDetailsSequence}`;
   detailsRow.hidden = !input.resetExpanded;
   const detailsCell = document.createElement("td");
-  detailsCell.colSpan = 4;
+  detailsCell.colSpan = 3;
   detailsCell.append(reset.details);
   detailsRow.append(detailsCell);
   reset.summary.dataset.accountFocus = `${account.accountId}:reset`;

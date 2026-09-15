@@ -1,5 +1,6 @@
 import {
   harnessModelRefSchema,
+  selectModelConfiguration,
   harnessPermissionModeIdSchema,
   harnessThinkingOptionIdSchema,
   type HarnessModelCatalog,
@@ -111,6 +112,13 @@ export function readNewThreadExternalConfigurationPreference(
 ): ExternalConfigurationPreference | undefined {
   const preference = readPreference(storage)?.externalByAgent[agent];
   if (!preference) return undefined;
+  if (catalog.configurationOptions) {
+    try {
+      catalog = selectModelConfiguration(catalog, preference.model);
+    } catch {
+      return undefined;
+    }
+  }
   const catalogModel = catalog.models.find(({ ref }) => ref.id === preference.model.id);
   if (!catalogModel) return undefined;
   const thinkingOptionId =

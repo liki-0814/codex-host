@@ -34,8 +34,6 @@ export class QoderUsageTracker {
   #contextUsedTokens: number | undefined;
   #latestInputTokens: number | undefined;
   #cacheHitRatePercent: number | undefined;
-  #planFiveHourUsedPercent: number | undefined;
-  #planFiveHourResetsAtUnix: number | undefined;
   #turnCredits: number | undefined;
 
   constructor(options?: {
@@ -239,29 +237,6 @@ export class QoderUsageTracker {
     if (isNonNegativeFinite(credits)) {
       this.#totalCredits = credits as number;
     }
-
-    const userQuota = (
-      usage.userQuota && typeof usage.userQuota === "object" ? usage.userQuota : undefined
-    ) as Record<string, unknown> | undefined;
-
-    const quotaPercent =
-      typeof userQuota?.percentage === "number"
-        ? userQuota.percentage
-        : typeof usage.totalUsagePercentage === "number"
-          ? usage.totalUsagePercentage
-          : undefined;
-
-    if (isNonNegativeFinite(quotaPercent) && quotaPercent <= 100) {
-      this.#planFiveHourUsedPercent = quotaPercent;
-    }
-
-    const expiresAt = usage.expiresAt ?? userQuota?.resetsAt;
-    if (typeof expiresAt === "number" && Number.isSafeInteger(expiresAt) && expiresAt > 0) {
-      const unix = expiresAt > 1e11 ? Math.floor(expiresAt / 1000) : Math.floor(expiresAt);
-      if (this.#planFiveHourUsedPercent !== undefined) {
-        this.#planFiveHourResetsAtUnix = unix;
-      }
-    }
   }
 
   snapshot(): HostUsage | null {
@@ -282,13 +257,6 @@ export class QoderUsageTracker {
     if (this.#totalCostUsd !== undefined) candidate.totalCostUsd = this.#totalCostUsd;
     if (this.#cacheHitRatePercent !== undefined)
       candidate.cacheHitRatePercent = this.#cacheHitRatePercent;
-
-    if (this.#planFiveHourUsedPercent !== undefined) {
-      candidate.planFiveHourUsedPercent = this.#planFiveHourUsedPercent;
-      if (this.#planFiveHourResetsAtUnix !== undefined) {
-        candidate.planFiveHourResetsAtUnix = this.#planFiveHourResetsAtUnix;
-      }
-    }
 
     const windowTokens = this.#contextWindowTokens;
     let usedTokens = this.#contextUsedTokens;

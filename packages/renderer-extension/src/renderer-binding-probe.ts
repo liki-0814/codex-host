@@ -1,5 +1,8 @@
+import { PI_EXTENSION_CHANGED } from "./settings/pi-permission-setup.js";
+import { MODEL_VISIBILITY_CHANGED } from "./renderer-model-visibility.js";
 import {
   decodeHarnessPluginRoute,
+  selectModelConfiguration,
   harnessIdSchema,
   permissionModeFixedAtCreate,
   type HarnessCommandDescriptor,
@@ -359,13 +362,13 @@ export function restoredThreadOwnership(inspection: ThreadInspection): RestoredT
     const model = inspection.effectiveModel ?? transportSelection.model;
     const thinkingOptionId =
       selectableThinkingOptionId(inspection) ?? transportSelection.thinkingOptionId;
+    const permissionModeId =
+      inspection.effectivePermissionModeId ?? transportSelection.permissionModeId;
     return {
       agent: "pi",
       ...(model ? { model } : {}),
       ...(thinkingOptionId ? { thinkingOptionId } : {}),
-      ...(inspection.effectivePermissionModeId
-        ? { permissionModeId: inspection.effectivePermissionModeId }
-        : {}),
+      ...(permissionModeId ? { permissionModeId } : {}),
     };
   }
   if (inspection.harnessId === "grok") {
@@ -476,11 +479,9 @@ export function restoredThreadOwnership(inspection: ThreadInspection): RestoredT
     }
     const model = inspection.effectiveModel ?? route.model;
     const thinkingOptionId =
-      inspection.harnessId === "cursor-cli"
-        ? undefined
-        : inspection.availableThinkingOptions !== undefined
-          ? selectableThinkingOptionId(inspection)
-          : (inspection.effectiveThinkingOptionId ?? route.thinkingOptionId);
+      inspection.availableThinkingOptions !== undefined
+        ? selectableThinkingOptionId(inspection)
+        : (inspection.effectiveThinkingOptionId ?? route.thinkingOptionId);
     const permissionModeId = inspection.effectivePermissionModeId ?? route.permissionModeId;
     return {
       agent: inspection.harnessId,
@@ -534,6 +535,8 @@ interface MountedComposer {
   permissionModeView: ExternalPermissionModeControlView;
   ownershipStatus: ComposerOwnershipStatus;
   threadConfiguration: HarnessModelSelectionState | undefined;
+  stagedModel?: HarnessModelRef;
+  stagedPermissionModeId?: HarnessPermissionModeId;
   usage: ThreadUsageSnapshot | null;
   accountCredits: AccountCreditsSnapshot | null;
   hostId: string | null;
@@ -628,6 +631,7 @@ function catalogWithConfigurationState(
   model: HarnessModelRef,
   state: HarnessModelSelectionState,
 ): HarnessModelCatalog {
+  if (state.modelCatalog) return state.modelCatalog;
   if (!state.availableThinkingOptions) return catalog;
   const supportedThinkingOptionIds = state.availableThinkingOptions.map(({ id }) => id);
   const models = catalog.models.map((candidate) => {
@@ -708,6 +712,7 @@ export function installRendererBindingProbe(
   });
   let connectionDiagnostics: RendererConnectionDiagnostics | null = null;
   const settingsLifecycle = installRendererSettingsLifecycle(window, {
+    getModelsClient: () => modelClientForHost(modelControl?.currentHostId?.() ?? "local"),
     getUpdateClient: () => modelControl,
     getAccountClient: () => modelControl,
     getConnectionDiagnostics: () => connectionDiagnostics,
@@ -874,7 +879,25 @@ export function installRendererBindingProbe(
     }
   };
 
-  const refreshCommands = async (mounted: MountedComposer): Promise<void> => {
+  const onModelVisibilityChanged = (): void => {
+    for (const mounted of mountedByComposer.values()) renderMounted(mounted);
+  };
+  window.addEventListener(MODEL_VISIBILITY_CHANGED, onModelVisibilityChanged);
+  const onPiExtensionChanged = (): void => {
+    for (const mounted of mountedByComposer.values()) {
+      if (
+        controller.get(mounted.composer).agent === "pi" &&
+        !threadIdFromComposerModelTarget(mounted.modelTarget)
+      )
+        void loadExternalCatalog(mounted);
+    }
+  };
+  window.addEventListener(PI_EXTENSION_CHANGED, onPiExtensionChanged);
+
+  const refreshCommands = async (
+    mounted: MountedComposer,
+    preserveExisting = false,
+  ): Promise<void> => {
     const generation = ++mounted.commandRequestGeneration;
     const agent = controller.get(mounted.composer).agent;
     const hostId = threadIdFromComposerModelTarget(mounted.modelTarget)
@@ -882,10 +905,13 @@ export function installRendererBindingProbe(
       : activeModelHostId();
     const requestControl = modelControl;
     const client = modelClientForHostFrom(requestControl, hostId);
-    mounted.control.harnessCommands.setCommands([]);
+    if (!preserveExisting) mounted.control.harnessCommands.setCommands([]);
     if (agent === "codex" || !client) return;
     try {
-      const catalog = await client.inspectHarnessCommands({ harnessId: externalHarnessIds[agent] });
+      const threadId = threadIdFromComposerModelTarget(mounted.modelTarget);
+      const catalog = threadId
+        ? await client.inspectThreadCommands({ threadId })
+        : await client.inspectHarnessCommands({ harnessId: externalHarnessIds[agent] });
       if (
         disposed ||
         mountedByComposer.get(mounted.composer) !== mounted ||
@@ -1130,9 +1156,9 @@ export function installRendererBindingProbe(
       const restored = controller.restore(
         mounted.composer,
         agent,
-        model,
+        mounted.stagedModel ?? model,
         thinkingOptionId,
-        permissionModeId,
+        mounted.stagedPermissionModeId ?? permissionModeId,
       );
       if (!restored) {
         throw new Error("Thread owner could not be applied to the Composer");
@@ -1144,6 +1170,7 @@ export function installRendererBindingProbe(
         }
         mounted.threadConfiguration = {
           ...(inspection.effectiveModel ? { effectiveModel: inspection.effectiveModel } : {}),
+          ...(inspection.modelCatalog ? { modelCatalog: inspection.modelCatalog } : {}),
           ...(inspection.resolvedModelLabel
             ? { resolvedModelLabel: inspection.resolvedModelLabel }
             : {}),
@@ -1220,6 +1247,8 @@ export function installRendererBindingProbe(
       mounted.modelView = { status: "idle" };
       mounted.permissionModeView = { status: "idle" };
       mounted.threadConfiguration = undefined;
+      delete mounted.stagedModel;
+      delete mounted.stagedPermissionModeId;
       mounted.ownershipStatus = "loading";
       mounted.usage = null;
       mounted.accountCredits = null;
@@ -1298,7 +1327,17 @@ export function installRendererBindingProbe(
       }
       if (inspection.status !== "ready") throw new Error(inspection.error.message);
       const current = controller.get(mounted.composer);
-      const previousModel = controller.modelForAgent(mounted.composer, agent);
+      const previousModel =
+        mounted.stagedModel ?? controller.modelForAgent(mounted.composer, agent);
+      if (current.phase === "locked" && mounted.threadConfiguration?.modelCatalog)
+        inspection.catalog = mounted.threadConfiguration.modelCatalog;
+      if (inspection.catalog.configurationOptions && previousModel) {
+        try {
+          inspection.catalog = selectModelConfiguration(inspection.catalog, previousModel);
+        } catch {
+          /* Retain the fresh native catalog if a saved choice is no longer supported. */
+        }
+      }
       const previousModelAvailable =
         previousModel !== undefined &&
         inspection.catalog.models.some((model) => model.ref.id === previousModel.id);
@@ -1347,7 +1386,10 @@ export function installRendererBindingProbe(
             : undefined);
         selectedPermissionModeId = draftPermissionMode(
           permissionModes,
-          restoredPermissionModeId ?? previousPermissionModeId ?? preferredPermissionModeId,
+          mounted.stagedPermissionModeId ??
+            restoredPermissionModeId ??
+            previousPermissionModeId ??
+            preferredPermissionModeId,
         );
         mounted.permissionModeView = {
           status: "loading",
@@ -1402,8 +1444,12 @@ export function installRendererBindingProbe(
         ? previousModel
         : (preferredConfiguration?.model ?? inspection.catalog.defaultModel);
       if (!selected) throw new Error("External Harness did not report its default Model");
+      if (inspection.catalog.configurationOptions)
+        inspection.catalog = selectModelConfiguration(inspection.catalog, selected);
       const effectiveCatalog =
-        current.phase === "locked" && mounted.threadConfiguration
+        current.phase === "locked" &&
+        mounted.threadConfiguration &&
+        !inspection.catalog.configurationOptions
           ? catalogWithConfigurationState(inspection.catalog, selected, mounted.threadConfiguration)
           : inspection.catalog;
       const previousThinkingOptionId = controller.thinkingOptionForAgent(mounted.composer, agent);
@@ -1507,12 +1553,57 @@ export function installRendererBindingProbe(
     if (current.agent === "codex") return;
     const agent = current.agent;
     const catalog = mounted.modelView.catalog;
-    const selected = catalog?.models.find((model) => model.ref.id === modelId)?.ref;
+    const selected =
+      catalog?.models.find((model) => model.ref.id === modelId)?.ref ??
+      catalog?.configurationOptions
+        ?.flatMap((option) => option.options)
+        .find((option) => option.model.id === modelId)?.model;
     if (!catalog || !selected || !modelControl) return;
     const previousModel = controller.modelForAgent(mounted.composer, agent);
     const previousThinking = controller.thinkingOptionForAgent(mounted.composer, agent);
     const previousPermissionModeId = controller.permissionModeForAgent(mounted.composer, agent);
     const supportsThinkingSelection = mounted.modelView.thinkingSelectionSupported === true;
+    if (catalog.configurationOptions) {
+      try {
+        const next = selectModelConfiguration(catalog, selected);
+        const model = next.defaultModel;
+        const thinking =
+          model && supportsThinkingSelection
+            ? draftThinkingOptionForModel(next, model, previousThinking)
+            : undefined;
+        if (
+          !model ||
+          !applyExternalConfiguration(mounted, agent, model, thinking, previousPermissionModeId)
+        )
+          throw new Error("Model configuration could not be applied to the Composer");
+        controller.beginModelRequest(mounted.composer);
+        controller.setExternalModel(mounted.composer, agent, model);
+        if (thinking) controller.setExternalThinkingOption(mounted.composer, agent, thinking);
+        mounted.stagedModel = model;
+        mounted.modelView = {
+          status: "ready",
+          catalog: next,
+          selected: model,
+          ...(thinking ? { selectedThinkingOptionId: thinking } : {}),
+          thinkingSelectionSupported: supportsThinkingSelection,
+        };
+        if (current.phase === "draft")
+          writeNewThreadExternalConfigurationPreference(
+            agent,
+            model,
+            thinking,
+            previousPermissionModeId,
+          );
+      } catch (error) {
+        mounted.modelView = {
+          ...mounted.modelView,
+          status: "error",
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+      renderMounted(mounted);
+      return;
+    }
     const generation = controller.beginModelRequest(mounted.composer);
     mounted.modelView = {
       status: "selecting",
@@ -1575,15 +1666,21 @@ export function installRendererBindingProbe(
           throw new Error("External Harness did not confirm an effective Model");
         }
         effectiveModel = state.effectiveModel;
-        if (!catalog.models.some((model) => model.ref.id === effectiveModel.id)) {
+        if (
+          !(state.modelCatalog ?? catalog).models.some(
+            (model) => model.ref.id === effectiveModel.id,
+          )
+        ) {
           throw new Error("External Harness activated a Model outside the current catalog");
         }
         effectiveThinkingOptionId = supportsThinkingSelection
           ? selectableThinkingOptionId(state)
           : undefined;
-        effectiveCatalog = supportsThinkingSelection
-          ? catalogWithConfigurationState(catalog, effectiveModel, state)
-          : catalog;
+        effectiveCatalog =
+          state.modelCatalog ??
+          (supportsThinkingSelection
+            ? catalogWithConfigurationState(catalog, effectiveModel, state)
+            : catalog);
         resolvedModelLabel = state.resolvedModelLabel;
         const effectivePermissionModeId =
           state.effectivePermissionModeId ?? previousPermissionModeId;
@@ -1672,6 +1769,30 @@ export function installRendererBindingProbe(
     }
     const previousPermissionModeId = controller.permissionModeForAgent(mounted.composer, agent);
     const thinkingOptionId = controller.thinkingOptionForAgent(mounted.composer, agent);
+    if (catalog.dimensions) {
+      if (
+        !applyExternalConfiguration(
+          mounted,
+          agent,
+          model,
+          thinkingOptionId,
+          selectedPermissionModeId,
+        )
+      )
+        return;
+      controller.setExternalPermissionMode(mounted.composer, agent, selectedPermissionModeId);
+      mounted.stagedPermissionModeId = selectedPermissionModeId;
+      mounted.permissionModeView = { status: "ready", catalog, selected: selectedPermissionModeId };
+      if (current.phase === "draft")
+        writeNewThreadExternalConfigurationPreference(
+          agent,
+          model,
+          thinkingOptionId,
+          selectedPermissionModeId,
+        );
+      renderMounted(mounted);
+      return;
+    }
     const generation = controller.beginModelRequest(mounted.composer);
     mounted.permissionModeView = {
       status: "selecting",
@@ -1948,6 +2069,10 @@ export function installRendererBindingProbe(
     renderMounted(mounted);
     try {
       const switched = await switching;
+      if (switched) {
+        delete mounted.stagedModel;
+        delete mounted.stagedPermissionModeId;
+      }
       if (switched && controller.get(mounted.composer).agent !== "codex") {
         void loadExternalCatalog(mounted);
       } else if (controller.get(mounted.composer).agent === "codex") {
@@ -2180,6 +2305,8 @@ export function installRendererBindingProbe(
       mounted.modelView = { status: "idle" };
       mounted.permissionModeView = { status: "idle" };
       mounted.threadConfiguration = undefined;
+      delete mounted.stagedModel;
+      delete mounted.stagedPermissionModeId;
       mounted.ownershipStatus = "loading";
       mounted.usage = null;
       mounted.accountCredits = null;
@@ -2340,6 +2467,10 @@ export function installRendererBindingProbe(
           : "loading"
         : "not-required",
       threadConfiguration: inherited?.threadConfiguration,
+      ...(inherited?.stagedModel ? { stagedModel: inherited.stagedModel } : {}),
+      ...(inherited?.stagedPermissionModeId
+        ? { stagedPermissionModeId: inherited.stagedPermissionModeId }
+        : {}),
       usage: inherited?.usage ?? null,
       accountCredits: inherited?.accountCredits ?? null,
       hostId: inherited?.hostId ?? hostId,
@@ -2347,6 +2478,12 @@ export function installRendererBindingProbe(
       commandRequestGeneration: 0,
     };
     mountedByComposer.set(composer, mounted);
+    control.harnessCommands.root.addEventListener("pointerenter", () => {
+      if (threadIdFromComposerModelTarget(mounted.modelTarget)) void refreshCommands(mounted, true);
+    });
+    control.harnessCommands.root.addEventListener("focusin", () => {
+      if (threadIdFromComposerModelTarget(mounted.modelTarget)) void refreshCommands(mounted, true);
+    });
     if (isComposerModelWriteAllowed(modelTarget)) {
       const model = controller.modelForAgent(composer, state.agent);
       if (shouldApplyDraftAgentCarrier(state.agent, model)) {
@@ -2798,6 +2935,8 @@ export function installRendererBindingProbe(
       disposeReasoningSoftWrap();
       sidebarAgentIcons.dispose();
       settingsLifecycle.dispose();
+      window.removeEventListener(MODEL_VISIBILITY_CHANGED, onModelVisibilityChanged);
+      window.removeEventListener(PI_EXTENSION_CHANGED, onPiExtensionChanged);
       document.removeEventListener("beforeinput", onBeforeInput, true);
       document.removeEventListener("submit", onSubmit, true);
       document.removeEventListener("keydown", onKeyDown, true);

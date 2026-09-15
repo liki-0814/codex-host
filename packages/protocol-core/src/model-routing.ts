@@ -85,16 +85,18 @@ export interface ExternalConfigurationSelection {
 export function encodePiTransportModel(
   model?: HarnessModelRef,
   thinkingOptionId?: HarnessThinkingOptionId,
+  permissionModeId?: HarnessPermissionModeId,
 ): string {
   if (!model) {
-    if (thinkingOptionId) throw new Error("Pi transport Thinking requires a Model Ref");
+    if (thinkingOptionId || permissionModeId)
+      throw new Error("Pi transport Thinking requires a Model Ref");
     return PI_NATIVE_TRANSPORT_MODEL_ID;
   }
   const parsedModel = harnessModelRefSchema.parse(model);
   const parsedThinking = thinkingOptionId
     ? harnessThinkingOptionIdSchema.parse(thinkingOptionId)
     : undefined;
-  return `${PI_NATIVE_TRANSPORT_MODEL_PREFIX}${parsedModel.id}${parsedThinking ? `@${parsedThinking}` : ""}`;
+  return `${PI_NATIVE_TRANSPORT_MODEL_PREFIX}${parsedModel.id}${permissionModeId ? `@${parsedThinking ?? ""}@${harnessPermissionModeIdSchema.parse(permissionModeId)}` : parsedThinking ? `@${parsedThinking}` : ""}`;
 }
 
 export function encodeOmpTransportModel(
@@ -291,12 +293,21 @@ export function decodePiTransportSelection(value: unknown): ExternalConfiguratio
   if (value === PI_NATIVE_TRANSPORT_MODEL_ID) return {};
   if (typeof value !== "string" || !value.startsWith(PI_NATIVE_TRANSPORT_MODEL_PREFIX)) return null;
   const components = value.slice(PI_NATIVE_TRANSPORT_MODEL_PREFIX.length).split("@");
-  if (components.length < 1 || components.length > 2) {
+  if (components.length < 1 || components.length > 3) {
     throw new Error("Pi transport configuration has an invalid component count");
   }
-  const [modelId, thinkingOptionId] = components;
+  const [modelId, thinkingOptionId, permissionModeId] = components;
   if (components.length === 2 && !thinkingOptionId) {
     throw new Error("Pi transport configuration has an empty Thinking option");
+  }
+  if (components.length === 3 && !permissionModeId) {
+    throw new Error("Pi transport configuration has an invalid Permission Mode");
+  }
+  const permission = permissionModeId
+    ? harnessPermissionModeIdSchema.safeParse(permissionModeId)
+    : null;
+  if (permission && !permission.success) {
+    throw new Error("Pi transport configuration has an invalid Permission Mode");
   }
   const model = harnessModelRefSchema.safeParse({ id: modelId });
   if (!model.success) throw new Error("Pi transport Model contains an invalid Model Ref");
@@ -309,6 +320,7 @@ export function decodePiTransportSelection(value: unknown): ExternalConfiguratio
   return {
     model: model.data,
     ...(thinking?.success ? { thinkingOptionId: thinking.data } : {}),
+    ...(permission?.success ? { permissionModeId: permission.data } : {}),
   };
 }
 
@@ -502,7 +514,11 @@ export function encodeExternalTransportSelection(
 ): string {
   switch (harnessId) {
     case "pi":
-      return encodePiTransportModel(selection.model, selection.thinkingOptionId);
+      return encodePiTransportModel(
+        selection.model,
+        selection.thinkingOptionId,
+        selection.permissionModeId,
+      );
     case "claude-code":
       return encodeClaudeTransportModel(
         selection.model,

@@ -24,10 +24,26 @@ integration. [CLI ACP](https://cursor.com/docs/cli/acp) is the selected interfac
 - Native create, text prompt, streaming text/reasoning, tool progress and cancellation.
 - Structured Edit Diff for successful tools carrying native ACP diff content,
   including new files and updates, in live output and native history replay.
-- Dynamic native model catalog. Full bracketed model variants are encoded into
-  transport-safe Host refs without losing native model parameters.
-- Native Agent, Plan and Ask configuration, confirmed by the ACP response before
-  changing Host state. These are execution modes, not fabricated approval levels.
+- Native model and parameter configuration through ACP. The client advertises
+  `clientCapabilities._meta.parameterizedModelPicker = true` during initialization.
+  Cursor returns model-specific `configOptions` for Fast, Thinking, Context and
+  Effort where supported. The native `cursor/list_available_models` ACP extension
+  supplies parameter definitions for all models. Picker changes update local draft
+  configuration immediately, with no native configuration requests. At submission,
+  only the final model and changed parameters are applied through
+  `session/set_config_option` before prompting; failure prevents prompt submission.
+  Returned options replace the previous configuration.
+  Opaque model selections preserve parameters across draft submission and resume.
+  The Renderer uses generic controls and never decodes Cursor model strings.
+- Separate execution (Agent, Plan, Ask) and approval (native rules, automatic) controls.
+  Picker changes are local until the next submission. Automatic execution uses Cursor's
+  native `--force` startup option; it does not manufacture ACP approval responses or
+  bypass explicit deny rules/team policy. Switching this option on an existing session
+  closes its owned transport and loads the same native session with the new option,
+  inside the accepted turn, before prompting. Unchanged approval settings reuse the
+  connection. Mode-only changes use native ACP configuration without restarting.
+  Questions and plan confirmations remain native interactions. `--force` does not
+  imply disabling the sandbox or approving new MCP server registrations.
 - Native tool approvals and Cursor's blocking question/plan extensions, with
   exact interaction correlation, response validation and cancellation cleanup.
 - Session resume and read-only snapshots, with strict native turn identity checks.
@@ -47,7 +63,9 @@ references. This is an undocumented native format, not a supported Cursor API.
 
 The snapshot body comes from a fresh native ACP `session/load`. It is accepted only
 when session, workspace, turn count, order and exact prompt text match native
-history. A successful live turn must introduce exactly one native user-turn ID.
+history. Advertised native slash commands may expand their prompt text; their
+completion still requires exactly one appended native user-turn ID and an unchanged
+preexisting turn sequence. A successful live turn must introduce exactly one native user-turn ID.
 Missing/ambiguous history is an error; generated UUIDs, array positions and text
 hashes are never used as native turn keys. The adapter keeps no shadow transcript.
 
@@ -67,9 +85,11 @@ contract investigation before release acceptance.
 - The Desktop Agent Picker is still based on a static Harness list. This integration
   adds Cursor explicitly and uses the shared plugin carrier. Its independent model
   and mode preferences do not inherit another Harness's Thinking selection.
-- Fork, rollback, independent thinking selection, usage/account reporting, native
-  session import, unattended full access and internal subagent transcript browsing are not
-  advertised. Image/audio prompt inputs are outside the current Host text contract.
+- Fork, rollback, session Usage and native session import are not advertised.
+  Account quota and native subagent transcript browsing are supported. Unattended
+  delegation maps to native `--force`, subject to the same Cursor restrictions above. Image/audio
+  prompt inputs are outside the current Host text contract. Parameter choices and labels come from the currently selected model
+  in ACP; no CLI model-list subprocess, suffix inference or guessed ranges are used.
 - Edit Diff is partial: it requires native ACP diff content. Delete/rename semantics,
   shell edits and missing historical diffs are not inferred. Other Cursor notification
   extensions are not all implemented.
@@ -214,3 +234,31 @@ also verified local Desktop subagents, Windows-to-Mac remote sessions, and
 Mac-to-Windows Remote Control. These deployed-candidate/user checks are distinct
 from automated tests of this branch, and do not establish compatibility with
 unobserved future versions of Cursor's private history format.
+
+## Native slash commands
+
+Open sessions consume ACP `available_commands_update`. Their declared prompt commands
+are exposed through the existing command picker and may also be typed directly.
+The clipboard-only `copy-request-id` command is excluded. An unopened session has
+no dynamic command catalog: opening the picker never launches a discovery process.
+Cursor ACP does not expose the CLI's TUI fork/summarize operations or session Usage.
+
+## Frontend model visibility and native account quota
+
+Settings → Models keeps independent hidden-model preferences for Pi, Qoder,
+Cursor and Grok in Desktop local storage. The picker filters its visible entries
+only; native catalogs, selected conversation models and Harness settings are
+unchanged. Configured variants share the base model's visibility preference.
+
+Cursor account inspection reads the native CLI OAuth credential store (macOS
+Keychain by default; the native auth file for file-store/Linux/Windows) without
+writing or copying credentials into Host state. It calls Cursor DashboardService
+`GetCurrentPeriodUsage`, `GetMe` and `GetPlanInfo`. The account page reports the
+native Auto and API percentages with the billing-cycle end date, as monthly
+quota rather than a seven-day limit. Spend/limit is deliberately not used because
+it excludes bonus/bucket semantics. Missing native percentage data yields no quota
+snapshot. API-key and memory-store sessions do not use unrelated saved OAuth.
+
+Verified native schema: Cursor CLI `2026.09.10-fd3934a`. These undocumented service
+and credential-store contracts may change; failures must not invent quota or
+include credentials in Renderer diagnostics.

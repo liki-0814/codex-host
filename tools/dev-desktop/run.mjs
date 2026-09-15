@@ -86,12 +86,15 @@ desktop_running() {
 }
 
 if desktop_running; then
-  /usr/bin/pkill -KILL -f "$system_desktop_pattern" >/dev/null 2>&1 || true
-  /usr/bin/pkill -KILL -f "$user_desktop_pattern" >/dev/null 2>&1 || true
+  # Ask Electron to quit normally so Chromium flushes local preferences.
+  # A failed/cancelled quit must stop this launch, never discard pending writes.
+  /usr/bin/osascript -e 'with timeout of 10 seconds' \
+    -e 'tell application id "com.openai.codex" to quit' \
+    -e 'end timeout' >/dev/null
   attempt=0
   while desktop_running; do
     if [ "$attempt" -ge 200 ]; then
-      echo 'Codex Desktop did not exit before timeout.' >&2
+      echo 'Codex Desktop did not quit normally; close it and retry. It was not force-killed.' >&2
       exit 1
     fi
     attempt=$((attempt + 1))

@@ -4,6 +4,7 @@ import type {
   HarnessId,
   HarnessInspection,
   HarnessModelRef,
+  HarnessModelCatalog,
   HarnessPermissionModeId,
   HarnessSessionCapabilities,
   HarnessSessionImportCandidate,
@@ -115,6 +116,7 @@ export type OpenSessionInput =
   CreateSessionInput | ResumeSessionInput | ForkSessionInput | RollbackLastTurnSessionInput;
 
 export interface HarnessSessionState {
+  modelCatalog?: HarnessModelCatalog;
   nativeRef?: NativeSessionRef;
   effectiveModel?: HarnessModelRef;
   resolvedModelLabel?: string;
@@ -130,6 +132,10 @@ export interface HostTextInput {
 
 export interface TurnStartCommand {
   type: "turn.start";
+  /** Applied inside the turn before prompting when permissionModeScope is turn. */
+  permissionModeId?: HarnessPermissionModeId;
+  /** Requested draft configuration; supporting Adapters apply it before native prompting. */
+  model?: HarnessModelRef;
   turnId: HostTurnId;
   input: HostTextInput[];
 }
@@ -554,6 +560,11 @@ export interface HarnessSessionImportCapability {
 }
 
 export interface HarnessAdapter {
+  /** Explicit installation of a bundled, adapter-owned extension. Never accepts paths or code. */
+  extension?(
+    id: string,
+    action: "inspect" | "install",
+  ): Promise<{ installed: boolean; available?: boolean; updateAvailable?: boolean }>;
   readonly harnessId: HarnessId;
   /** Static command metadata. Reading it must not inspect, connect to, or open a Native Session. */
   readonly commandCatalog?: HarnessCommandCatalog;

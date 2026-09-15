@@ -4432,6 +4432,38 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await stopFixture(fixture);
   });
 
+  it("keeps extension inspection read-only and validates explicit installation", async () => {
+    const fixture = createFixture();
+    const extension = vi.fn(async (_id: string, action: string) => ({
+      installed: action === "install",
+    }));
+    Object.assign(fixture.adapter, { extension });
+    for (const [id, action, installed] of [
+      [1, "inspect", false],
+      [2, "install", true],
+    ] as const) {
+      writeRequest(fixture.desktopInput, {
+        id,
+        method: "codexhost/harness/extension",
+        params: { harnessId: "pi", extensionId: "permissions", action },
+      });
+      await expect(
+        fixture.collector.waitFor((message) => requestId(message, id)),
+      ).resolves.toMatchObject({ result: { installed } });
+      expect(extension).toHaveBeenLastCalledWith("permissions", action);
+    }
+    writeRequest(fixture.desktopInput, {
+      id: 3,
+      method: "codexhost/harness/extension",
+      params: { harnessId: "pi", extensionId: "../external", action: "install" },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 3)),
+    ).resolves.toMatchObject({ error: { code: -32602 } });
+    expect(extension).toHaveBeenCalledTimes(2);
+    await stopFixture(fixture);
+  });
+
   it("reads static Harness command catalogs without inspection or opening a Session", async () => {
     const fixture = createFixture();
     const catalog = {
@@ -7203,6 +7235,46 @@ describe("AppServerHost HarnessAdapter projection", () => {
     expect(startedIndex).toBeGreaterThan(responseIndex);
     await stopFixture(fixture);
   });
+
+  it.each(["catalog", "scope"])(
+    "carries staged Model via %s on turn.start without a blocking selection request",
+    async (advertisement) => {
+      const adapter = new FakeHarnessAdapter(harnessIdSchema.parse("pi"));
+      const fixture = createFixture({
+        externalAdapters: new Map<ExternalHarnessId, FakeHarnessAdapter>([["pi", adapter]]),
+      });
+      const first = adapter.catalog.models[0]?.ref,
+        second = adapter.catalog.models[1]?.ref;
+      if (!first || !second) throw new Error("Missing models");
+      const threadId = await startExternalThread(fixture, encodePiTransportModel(first), 920);
+      const session = adapter.sessions[0];
+      if (!session) throw new Error("Missing session");
+      if (advertisement === "catalog")
+        session.initialState.modelCatalog = { ...adapter.catalog, configurationOptions: [] };
+      else session.capabilities.configuration.modelSelectionScope = "turn";
+      session.capabilities.configuration.permissionModeScope = "turn";
+      const permissionModeId = harnessPermissionModeIdSchema.parse("plan");
+      const execute = vi.spyOn(session, "execute");
+      writeRequest(fixture.desktopInput, {
+        id: 921,
+        method: "turn/start",
+        params: {
+          threadId,
+          model: encodeHarnessPluginRoute({
+            harnessId: harnessIdSchema.parse("pi"),
+            model: second,
+            permissionModeId,
+          }),
+          input: [{ type: "text", text: "hello" }],
+        },
+      });
+      await fixture.collector.waitFor((message) => requestId(message, 921));
+      expect(execute.mock.calls).toEqual([
+        [expect.objectContaining({ type: "turn.start", model: second, permissionModeId })],
+      ]);
+      await stopFixture(fixture);
+    },
+  );
 
   it("keeps selected Claude Models request-scoped and projects confirmed actual state", async () => {
     const piAdapter = new FakeHarnessAdapter(harnessIdSchema.parse("pi"));

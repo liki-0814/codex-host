@@ -206,6 +206,21 @@ describe("external Harness transport model routing", () => {
     ).toEqual({ model });
   });
 
+  it.each([undefined, "high"])("preserves Pi approval with thinking %s", (level) => {
+    const model = harnessModelRefSchema.parse({ id: "pi-model-v1.synthetic" });
+    const thinkingOptionId = level ? harnessThinkingOptionIdSchema.parse(level) : undefined;
+    const permissionModeId = harnessPermissionModeIdSchema.parse("approve");
+    const carrier = encodePiTransportModel(model, thinkingOptionId, permissionModeId);
+    expect(decodePiTransportSelection(carrier)).toEqual({
+      model,
+      permissionModeId,
+      ...(thinkingOptionId ? { thinkingOptionId } : {}),
+    });
+    expect(
+      decodeCreateRoute({ id: 1, method: "thread/start", params: { model: carrier } }),
+    ).toMatchObject({ harnessId: "pi", permissionModeId });
+  });
+
   it("round-trips a request-scoped Pi Model and Thinking pair", () => {
     const model = harnessModelRefSchema.parse({ id: "pi-model-v1.cHJvdmlkZXItaWQ" });
     const thinkingOptionId = harnessThinkingOptionIdSchema.parse("xhigh");
@@ -430,7 +445,7 @@ describe("external Harness transport model routing", () => {
       `${PI_NATIVE_TRANSPORT_MODEL_ID}@provider/model`,
       `${PI_NATIVE_TRANSPORT_MODEL_ID}@${"x".repeat(513)}`,
       `${PI_NATIVE_TRANSPORT_MODEL_ID}@pi-model-v1.valid@`,
-      `${PI_NATIVE_TRANSPORT_MODEL_ID}@pi-model-v1.valid@high@extra`,
+      `${PI_NATIVE_TRANSPORT_MODEL_ID}@pi-model-v1.valid@high@approve@extra`,
     ]) {
       expect(() => decodeCreateRoute({ id: 6, method: "thread/start", params: { model } })).toThrow(
         /invalid Model Ref|empty Thinking option|invalid component count/u,

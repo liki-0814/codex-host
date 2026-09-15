@@ -142,11 +142,10 @@
 .settings-account-table th:nth-child(1) {
   width: 32%;
 }
-.settings-account-table th:nth-child(2),
-.settings-account-table th:nth-child(3) {
-  width: 24%;
+.settings-account-table th:nth-child(2) {
+  width: 48%;
 }
-.settings-account-table th:nth-child(4) {
+.settings-account-table th:nth-child(3) {
   width: 20%;
   text-align: right;
 }
@@ -549,4 +548,20 @@
   .settings-account-usage__bar > span {
     background: Highlight;
   }
+}
+
+.settings-account-quota-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 18px 24px;
+}
+.settings-account-quota-grid .settings-account-usage__title {
+  display: block;
+}
+
+.settings-account-quota-amount {
+  margin-top: 8px;
+  font-size: 12px;
+  text-align: right;
+  color: var(--settings-muted);
 }

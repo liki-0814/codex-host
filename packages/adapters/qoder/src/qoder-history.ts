@@ -22,6 +22,7 @@ const qoderHarnessId: HarnessId = harnessIdSchema.parse("qoder");
 interface ToolResultInfo {
   content: string;
   isError: boolean;
+  agent?: { id: string; role: string; state: string };
 }
 
 export function extractUserText(message: SessionMessage): string {
@@ -108,7 +109,16 @@ function collectToolResults(messages: readonly SessionMessage[]): Map<string, To
             } else if (b.content !== undefined && b.content !== null) {
               content = JSON.stringify(b.content);
             }
-            results.set(b.tool_use_id, { content, isError });
+            const native = message.tool_use_result as Record<string, unknown> | undefined;
+            const agent =
+              native?.kind === "agent-result" && typeof native.agentId === "string"
+                ? {
+                    id: native.agentId,
+                    role: typeof native.agentType === "string" ? native.agentType : "Agent",
+                    state: typeof native.state === "string" ? native.state : "unknown",
+                  }
+                : undefined;
+            results.set(b.tool_use_id, { content, isError, ...(agent ? { agent } : {}) });
           }
         }
       }
@@ -295,6 +305,33 @@ export function mapQoderSnapshot(
 
               const itemId = hostItemIdSchema.parse(`qoder-item-${rawBlock.id}`);
 
+              if (res?.agent) {
+                const child = res.agent;
+                items.push({
+                  item: {
+                    type: "subagentDelegation",
+                    itemId: hostItemIdSchema.parse(`qoder-subagent-${child.id}`),
+                    operation: "spawn",
+                    subagents: [
+                      {
+                        subagentId: child.id,
+                        nativeSubagentId: child.id,
+                        description: child.role,
+                        role: child.role,
+                        background: false,
+                        status: isError
+                          ? "failed"
+                          : child.state === "completed"
+                            ? "completed"
+                            : "interrupted",
+                        ...(output ? { resultSummary: output } : {}),
+                      },
+                    ],
+                  },
+                  outcome: toolOutcome,
+                });
+                continue;
+              }
               if (
                 rawBlock.name === "Bash" &&
                 typeof rawBlock.input === "object" &&
@@ -342,4 +379,18 @@ export function mapQoderSnapshot(
   }
 
   return { turns };
+}
+
+/** SDK child transcripts retain the parent's tool-call link on every message.
+ * Within the already selected child transcript, its task prompt is the root input.
+ * Native UUIDs and session identity are retained unchanged.
+ */
+export function mapQoderSubagentSnapshot(
+  messages: readonly SessionMessage[],
+  sessionId: string,
+): HostThreadSnapshot {
+  return mapQoderSnapshot(
+    messages.map((message) => ({ ...message, parent_tool_use_id: null })),
+    sessionId,
+  );
 }

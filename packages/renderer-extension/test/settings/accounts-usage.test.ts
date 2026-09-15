@@ -28,6 +28,9 @@ class FakeElement {
   addEventListener(name: string, listener: () => void): void {
     this.listeners.set(name, listener);
   }
+  get firstElementChild(): unknown {
+    return this.children[0];
+  }
   append(...children: unknown[]): void {
     this.children.push(...children);
   }
@@ -102,11 +105,11 @@ describe("Account limit windows", () => {
     );
     if (!result) throw new Error("Expected limits");
     expect(text(result)).toContain("7 天");
-    expect(text(result)).toContain("—");
+    expect(text(result)).not.toContain("—");
     expect(text(result)).not.toContain("未提供此窗口");
     expect(
       elements(result).filter((el) => el.className === "settings-account-usage__missing"),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     expect(elements(result).filter((el) => el.attributes.get("role") === "meter")).toHaveLength(1);
   });
 
@@ -186,8 +189,8 @@ describe("Account limit windows", () => {
   });
 });
 
-describe("Quota comparison columns", () => {
-  function columns(credits: AccountCreditsSnapshot) {
+describe("Flexible quota periods", () => {
+  function quota(credits: AccountCreditsSnapshot) {
     const result = renderUsage(
       document,
       { status: "ready", credits, freshness: "live", observedAt: null },
@@ -195,35 +198,43 @@ describe("Quota comparison columns", () => {
       "remaining",
       vi.fn(),
     );
-    const [fiveHour, sevenDay] = result.cells;
-    if (!fiveHour || !sevenDay) throw new Error("Expected two comparison columns");
-    return { ...result, cells: [fiveHour, sevenDay] as const };
+    expect(result.cells).toHaveLength(1);
+    const cell = result.cells[0];
+    if (!cell) throw new Error("Missing quota cell");
+    return cell;
   }
-
-  it("places weekly zero usage only in the 7-day column", () => {
-    const result = columns({ usedPercent: 0, periodType: "weekly" });
-    expect(elements(result.cells[0]).some((el) => el.attributes.get("role") === "meter")).toBe(
-      false,
-    );
+  it("renders only the reported period, including valid zero usage", () => {
+    const cell = quota({ usedPercent: 0, periodType: "weekly" });
+    expect(text(cell)).toContain("周额度");
+    expect(text(cell)).not.toContain("5 小时");
     expect(
-      elements(result.cells[1])
+      elements(cell)
         .find((el) => el.attributes.get("role") === "meter")
         ?.attributes.get("aria-valuenow"),
     ).toBe("100");
-    expect(result.additional).toBeNull();
   });
-
-  it("places the exact secondary window in its column without merging duplicate reports", () => {
-    const result = columns({
+  it("keeps distinct native limits without merging or empty placeholder columns", () => {
+    const cell = quota({
       ...credits,
       productUsage: [
         { product: "7-day window", usagePercent: 20 },
         { product: "7-day window", usagePercent: 35 },
       ],
     });
-    expect(text(result.cells[0])).toContain("9%");
-    expect(text(result.cells[1])).toContain("80%");
-    expect(result.additional && text(result.additional)).toContain("65%");
+    expect(text(cell)).toContain("9%");
+    expect(text(cell)).toContain("80%");
+    expect(text(cell)).toContain("65%");
+  });
+  it("renders Cursor Auto and API monthly limits together", () => {
+    const cell = quota({
+      usedPercent: 20,
+      label: "Auto · monthly",
+      periodType: "monthly",
+      productUsage: [{ product: "API · monthly", usagePercent: 30 }],
+    });
+    expect(text(cell)).toContain("Auto · 月额度");
+    expect(text(cell)).toContain("API · 月额度");
+    expect(elements(cell).filter((el) => el.attributes.get("role") === "meter")).toHaveLength(2);
   });
 });
 
@@ -266,4 +277,49 @@ describe("Account reset-card details", () => {
     expect(text(result.details)).toContain("第 2 张");
     expect(elements(result.details).some((el) => el.tagName === "button")).toBe(false);
   });
+});
+
+it("shows exact native credits alongside the reported quota percentage", () => {
+  const result = usage(
+    {
+      usedPercent: 64,
+      periodType: "unknown",
+      label: "Plan credits",
+      used: 3781,
+      limit: 6000,
+      unit: "credits",
+    },
+    "remaining",
+  );
+  expect(text(result)).toContain("2,219 / 6,000 credits");
+  expect(text(result)).toContain("36%");
+  expect(text(result)).not.toContain("5 小时");
+});
+
+it("keeps personal and shared credit amounts in their own meters", () => {
+  const result = usage(
+    {
+      usedPercent: 64,
+      periodType: "unknown",
+      label: "Plan credits",
+      used: 3783,
+      limit: 6000,
+      unit: "credits",
+      productUsage: [
+        {
+          product: "Shared resource credits",
+          usagePercent: 0,
+          used: 0,
+          limit: 20000,
+          unit: "credits",
+        },
+      ],
+    },
+    "remaining",
+  );
+  const meters = elements(result).filter((el) => el.className === "settings-account-usage__meter");
+  expect(meters).toHaveLength(2);
+  expect(text(meters[0] as unknown as HTMLElement)).toContain("2,217 / 6,000 credits");
+  expect(text(meters[1] as unknown as HTMLElement)).toContain("20,000 / 20,000 credits");
+  expect(text(meters[1] as unknown as HTMLElement)).toContain("共享资源包");
 });

@@ -54,9 +54,25 @@ export const harnessModelGroupSchema = z.enum(["default", "new", "custom"]);
 
 export type HarnessModelGroup = z.infer<typeof harnessModelGroupSchema>;
 
+// The Adapter supplies opaque selections; Renderer never interprets native configuration.
+export const harnessModelConfigurationOptionSchema = z
+  .object({
+    id: nonBlankTextSchema,
+    label: nonBlankTextSchema,
+    description: z.string().optional(),
+    currentValue: z.string(),
+    options: z.array(
+      z
+        .object({ value: z.string(), label: nonBlankTextSchema, model: harnessModelRefSchema })
+        .strict(),
+    ),
+  })
+  .strict();
+
 export const harnessModelSchema = z
   .object({
     ref: harnessModelRefSchema,
+    configurationOptions: z.array(harnessModelConfigurationOptionSchema).optional(),
     label: nonBlankTextSchema.max(HARNESS_MODEL_LABEL_MAX_LENGTH),
     resolvedModelLabel: harnessResolvedModelLabelSchema.optional(),
     supportedThinkingOptionIds: z.array(harnessThinkingOptionIdSchema).optional(),
@@ -86,6 +102,7 @@ const harnessThinkingOptionsSchema = z
 export const harnessModelCatalogSchema = z
   .object({
     models: z.array(harnessModelSchema),
+    configurationOptions: z.array(harnessModelConfigurationOptionSchema).optional(),
     defaultModel: harnessModelRefSchema.optional(),
     thinkingOptions: harnessThinkingOptionsSchema,
     defaultThinkingOptionId: harnessThinkingOptionIdSchema.optional(),
@@ -152,7 +169,7 @@ const harnessHistoryCapabilitiesSchema = z
     message: "Cross-cwd Fork requires exact history Fork support",
   });
 
-export const harnessPermissionModeScopeSchema = z.enum(["live", "atCreate"]);
+export const harnessPermissionModeScopeSchema = z.enum(["live", "atCreate", "turn"]);
 
 export type HarnessPermissionModeScope = z.infer<typeof harnessPermissionModeScopeSchema>;
 
@@ -167,6 +184,7 @@ export const harnessSessionCapabilitiesSchema = z
     configuration: z
       .object({
         selectModel: z.boolean(),
+        modelSelectionScope: z.enum(["live", "turn"]).optional(),
         selectThinkingOption: z.boolean(),
         selectPermissionMode: z.boolean(),
         permissionModeScope: harnessPermissionModeScopeSchema.default("live"),
@@ -194,6 +212,7 @@ export type HarnessSessionCapabilities = z.infer<typeof harnessSessionCapabiliti
 export const harnessConfigurationStateSchema = z
   .object({
     effectiveModel: harnessModelRefSchema.optional(),
+    modelCatalog: harnessModelCatalogSchema.optional(),
     resolvedModelLabel: harnessResolvedModelLabelSchema.optional(),
     effectiveThinkingOptionId: harnessThinkingOptionIdSchema.optional(),
     availableThinkingOptions: harnessThinkingOptionsSchema.optional(),
@@ -324,6 +343,7 @@ const externalThreadInspectionSchema = z
     harnessId: nonBlankTextSchema.max(256),
     transportModelId: nonBlankTextSchema.max(1_024),
     effectiveModel: harnessModelRefSchema.optional(),
+    modelCatalog: harnessModelCatalogSchema.optional(),
     resolvedModelLabel: harnessResolvedModelLabelSchema.optional(),
     effectiveThinkingOptionId: harnessThinkingOptionIdSchema.optional(),
     availableThinkingOptions: harnessThinkingOptionsSchema.optional(),

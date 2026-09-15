@@ -1,3 +1,4 @@
+import { QoderSubagentObserver } from "./qoder-subagents.js";
 import { randomUUID } from "node:crypto";
 import type {
   HarnessOutput,
@@ -207,6 +208,9 @@ export class QoderSession implements HarnessSession {
   #commandCatalog: HarnessCommandCatalog = QODER_FALLBACK_COMMAND_CATALOG;
   #state: HarnessSessionState;
   #activeTurn: ActiveTurnState | null = null;
+  readonly #subagentObserver = new QoderSubagentObserver((event) =>
+    this.#channel.emit({ kind: "event", event }),
+  );
   #closed = false;
   #consumerLoopDone: Promise<void>;
 
@@ -252,6 +256,7 @@ export class QoderSession implements HarnessSession {
     }
 
     this.capabilities = {
+      subagents: { observe: true, readTranscript: true },
       configuration: {
         selectModel: true,
         selectThinkingOption: options.catalog
@@ -307,6 +312,34 @@ export class QoderSession implements HarnessSession {
       auth,
       includePartialMessages: true,
       canUseTool: this.#handleCanUseTool.bind(this),
+      hooks: {
+        SubagentStart: [
+          {
+            hooks: [
+              async (input) => {
+                if (input.hook_event_name === "SubagentStart" && this.#activeTurn)
+                  this.#subagentObserver.start(
+                    input.agent_id,
+                    input.agent_type,
+                    this.#activeTurn.turnId,
+                  );
+                return {};
+              },
+            ],
+          },
+        ],
+        SubagentStop: [
+          {
+            hooks: [
+              async (input) => {
+                if (input.hook_event_name === "SubagentStop")
+                  this.#subagentObserver.stop(input.agent_id);
+                return {};
+              },
+            ],
+          },
+        ],
+      },
     };
 
     this.#query = options.queryFactory({
@@ -333,6 +366,7 @@ export class QoderSession implements HarnessSession {
   }
 
   #emitEvent(event: HostEvent): void {
+    if (event.type === "turn.completed") this.#subagentObserver.endTurn(event.turnId);
     this.#channel.emit({ kind: "event", event });
   }
 

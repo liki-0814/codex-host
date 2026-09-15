@@ -16,6 +16,7 @@ import {
 } from "../src/pi-rpc-session.js";
 
 type Scenario =
+  | "permission-extension"
   | "final-only"
   | "reasoning"
   | "reasoning-multiple-blocks"
@@ -197,6 +198,17 @@ class FakePiRpcProcess extends EventEmitter {
       ) {
         this.#completeInteractionTurn();
       }
+      return;
+    }
+    if (command.type === "get_commands") {
+      this.#respond(command, {
+        commands:
+          this.#scenario === "permission-extension" ? [{ name: "codexhost-permission-mode" }] : [],
+      });
+      return;
+    }
+    if (command.type === "prompt" && this.#scenario === "permission-extension") {
+      this.#respond(command);
       return;
     }
     if (command.type === "get_state") {
@@ -1677,4 +1689,20 @@ describe("Pi RPC Turn aggregation", () => {
     );
     await rpc.close();
   });
+});
+
+it("reads the native command response envelope and fails closed without the approval extension", async () => {
+  const installed = session("permission-extension");
+  const absent = session("final-only");
+  try {
+    await installed.start();
+    await installed.selectPermissionMode("approve");
+    await installed.selectPermissionMode("auto");
+    await installed.selectPermissionMode("auto");
+    await absent.start();
+    await expect(absent.selectPermissionMode("auto")).rejects.toThrow("not loaded");
+  } finally {
+    await installed.close();
+    await absent.close();
+  }
 });

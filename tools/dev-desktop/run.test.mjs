@@ -142,7 +142,10 @@ describe("development Desktop start", () => {
     expect(macOsScript).toContain("ps -p");
     expect(macOsScript).toContain("packages/desktop-control/dist/release-main.js");
     expect(macOsScript).toContain("kill -TERM");
-    expect(macOsScript).toContain("pkill -KILL");
+    expect(macOsScript).toContain('tell application id "com.openai.codex" to quit');
+    expect(macOsScript).toContain("with timeout of 10 seconds");
+    expect(macOsScript).not.toContain('pkill -KILL -f "$system_desktop_pattern"');
+    expect(macOsScript).not.toContain('pkill -KILL -f "$user_desktop_pattern"');
     expect(runningDesktopCleanupInvocation("linux")).toBeNull();
   });
 

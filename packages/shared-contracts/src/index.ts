@@ -296,3 +296,14 @@ export const packageMetadata = {
   name: "@codexhost/shared-contracts",
   contractVersion: WORKSPACE_CONTRACT_VERSION,
 } as const;
+export {
+  configuredModelRef,
+  readConfiguredModelRef,
+  selectModelConfiguration,
+} from "./model-configuration.js";
+export {
+  harnessExtensionParamsSchema,
+  harnessExtensionStateSchema,
+  type HarnessExtensionParams,
+  type HarnessExtensionState,
+} from "./harness-extension.js";

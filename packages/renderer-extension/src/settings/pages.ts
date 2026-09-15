@@ -1,3 +1,4 @@
+import { createModelsSettingsPage, type RendererModelsClient } from "./models-page.js";
 import type {
   UpdateCheckResult,
   UpdateInstallation,
@@ -73,6 +74,7 @@ function windowsInstallerDownloadUrl(window: Window | null | undefined, version:
 export const DEFAULT_RENDERER_SETTINGS_PAGE_IDS = [
   "connections",
   "accounts",
+  "models",
   "session-import",
   "appearance",
   "updates",
@@ -584,10 +586,12 @@ export function createDefaultRendererSettingsPages(
   getSessionImportClient: () => RendererSessionImportClient | null = () => null,
   openImportedThread: RendererImportedThreadOpener = () =>
     Promise.reject(new Error("Imported Thread navigation is unavailable")),
+  getModelsClient: () => RendererModelsClient | null = () => null,
 ): readonly RendererSettingsPageDefinition[] {
   return Object.freeze([
     createConnectionsSettingsPage(messages, getDiagnostics),
     createAccountsSettingsPage(messages, getAccountClient),
+    createModelsSettingsPage(messages, getModelsClient),
     createSessionImportSettingsPage(messages, getSessionImportClient, openImportedThread),
     createAppearanceSettingsPage(messages),
     updatesPage(messages, getUpdateClient),

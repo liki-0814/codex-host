@@ -384,6 +384,7 @@ const ENGLISH_MESSAGES: RendererSettingsMessages = Object.freeze({
   aboutStarCallout: "⭐ If this project helps you, please give us a Star! ⭐",
   aboutRepository: "Open-source repository",
   pageLabels: Object.freeze({
+    models: "Models",
     connections: "Connections",
     appearance: "Appearance",
     accounts: "Accounts",
@@ -578,6 +579,7 @@ const CHINESE_MESSAGES: RendererSettingsMessages = Object.freeze({
   aboutStarCallout: "⭐ 如果这个项目对你有帮助，请给我们一个 Star！⭐",
   aboutRepository: "开源仓库",
   pageLabels: Object.freeze({
+    models: "模型",
     connections: "连接",
     appearance: "外观",
     accounts: "账号",

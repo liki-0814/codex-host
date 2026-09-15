@@ -1,3 +1,5 @@
+import { readHiddenModels, modelVisibilityId } from "./renderer-model-visibility.js";
+import { mountModelConfigurationControls } from "./model-configuration-controls.js";
 import type {
   HarnessModel,
   HarnessModelCatalog,
@@ -9,6 +11,7 @@ import type {
 
 import {
   rendererModelPickerMainMenuPlacement,
+  rendererModelPickerBottomAlignedMenuPlacement,
   rendererModelPickerModelMenuPlacement,
   rendererModelPickerStandaloneModelMenuPlacement,
   RENDERER_MODEL_PICKER_MAIN_MENU_WIDTH,
@@ -77,6 +80,7 @@ export interface RendererModelPickerControl {
   searchEmpty: HTMLElement;
   options: Map<string, ModelOptionControl>;
   thinkingOptions: Map<string, ThinkingOptionControl>;
+  configuration: ReturnType<typeof mountModelConfigurationControls>;
   close(): void;
   dispose(): void;
 }
@@ -209,7 +213,9 @@ function positionModelMenu(control: RendererModelPickerControl, standalone = fal
         width: window.innerWidth,
         height: window.innerHeight,
       })
-    : rendererModelPickerModelMenuPlacement(anchorRect, {
+    : (control.menu.querySelector("[data-model-configuration]")
+        ? rendererModelPickerBottomAlignedMenuPlacement
+        : rendererModelPickerModelMenuPlacement)(anchorRect, {
         width: window.innerWidth,
         height: window.innerHeight,
       });
@@ -491,20 +497,33 @@ export function mountRendererModelPicker(
       applyModelSearchFilter(control);
     }
   };
+  const configuration = mountModelConfigurationControls(
+    menu,
+    (modelId) => {
+      configuration.close();
+      onSelectModel(modelId);
+    },
+    closeModelMenu,
+  );
   const pickerOpen = (): boolean => popoverOpen(menu) || popoverOpen(modelMenu);
   const close = (): void => {
+    configuration.close();
     closeModelMenu();
     if (popoverOpen(menu)) menu.hidePopover();
   };
   const openModelMenu = (standalone = false): void => {
     if ((!standalone && !popoverOpen(menu)) || popoverOpen(modelMenu)) return;
+    configuration.close();
     modelMenu.showPopover();
     positionModelMenu(control, standalone);
     modelButton.setAttribute("aria-expanded", "true");
   };
   const open = (): void => {
     if (trigger.disabled || pickerOpen()) return;
-    if (control.thinkingOptions.size === 0) {
+    if (
+      control.thinkingOptions.size === 0 &&
+      !control.menu.querySelector("[data-model-configuration]")
+    ) {
       openModelMenu(true);
       return;
     }
@@ -519,7 +538,10 @@ export function mountRendererModelPicker(
     const openState = popoverOpen(menu);
     trigger.setAttribute("aria-expanded", String(openState || popoverOpen(modelMenu)));
     trigger.setAttribute("data-state", openState ? "open" : "closed");
-    if (!openState) closeModelMenu();
+    if (!openState) {
+      closeModelMenu();
+      configuration.close();
+    }
   };
   const onModelToggle = (): void => {
     const openState = popoverOpen(modelMenu);
@@ -556,7 +578,13 @@ export function mountRendererModelPicker(
   const onDocumentPointerDown = (event: PointerEvent): void => {
     if (!popoverOpen(menu) && !popoverOpen(modelMenu)) return;
     const target = event.target instanceof Node ? event.target : null;
-    if (target && (root.contains(target) || menu.contains(target) || modelMenu.contains(target))) {
+    if (
+      target &&
+      (root.contains(target) ||
+        menu.contains(target) ||
+        modelMenu.contains(target) ||
+        configuration.menu.contains(target))
+    ) {
       return;
     }
     close();
@@ -569,6 +597,7 @@ export function mountRendererModelPicker(
     trigger.focus();
   };
   const onViewportChange = (): void => {
+    configuration.position();
     if (popoverOpen(menu)) positionAdvancedMenus(control);
     else if (popoverOpen(modelMenu)) positionModelMenu(control, true);
   };
@@ -604,6 +633,7 @@ export function mountRendererModelPicker(
     searchEmpty,
     options,
     thinkingOptions,
+    configuration,
     close,
     dispose() {
       close();
@@ -622,6 +652,7 @@ export function mountRendererModelPicker(
       document.removeEventListener("keydown", onDocumentKeyDown, true);
       window.removeEventListener("resize", onViewportChange);
       window.removeEventListener("scroll", onViewportChange, true);
+      configuration.dispose();
       menu.remove();
       modelMenu.remove();
       root.remove();
@@ -641,6 +672,8 @@ function rebuildOptions(control: RendererModelPickerControl, view: RendererModel
     control.searchHeader,
     control.searchEmpty,
   );
+
+  control.configuration.render(view.catalog);
 
   if (presentation.showThinkingSection) {
     control.menu.append(createHeading("Thinking"));
@@ -673,7 +706,16 @@ function rebuildOptions(control: RendererModelPickerControl, view: RendererModel
   modelChevron.textContent = "\u203a";
   modelChevron.setAttribute("aria-hidden", "true");
   modelChevron.className = "shrink-0 text-token-text-tertiary";
-  control.modelButton.replaceChildren(modelText, modelChevron);
+  if (view.catalog?.configurationOptions?.length) {
+    const heading = document.createElement("span");
+    heading.textContent = "Model";
+    const trailing = document.createElement("span");
+    trailing.className = "flex min-w-0 items-center gap-2 text-token-text-tertiary";
+    modelText.className = "min-w-0 truncate";
+    trailing.append(modelText, modelChevron);
+    control.modelButton.classList.add("justify-between");
+    control.modelButton.replaceChildren(heading, trailing);
+  } else control.modelButton.replaceChildren(modelText, modelChevron);
   control.menu.append(control.modelButton);
 
   const models = view.catalog?.models ?? [];
@@ -720,6 +762,7 @@ export function renderRendererModelPicker(
   control: RendererModelPickerControl,
   view: RendererModelControlView,
   visible: boolean,
+  harness = "",
 ): void {
   control.root.style.display = visible ? "inline-flex" : "none";
   control.root.style.alignItems = "center";
@@ -732,8 +775,17 @@ export function renderRendererModelPicker(
     return;
   }
   const presentation = rendererModelPickerPresentation(view);
+  const hiddenModels = readHiddenModels(
+    control.root.ownerDocument.defaultView?.localStorage,
+    harness,
+  );
+  const visibleModels = view.catalog?.models.filter(
+    (model) => !hiddenModels.has(modelVisibilityId(model.ref)),
+  );
   const catalogSignature = JSON.stringify({
+    visibleModels,
     models: view.catalog?.models,
+    configurationOptions: view.catalog?.configurationOptions,
     thinkingOptions: presentation.thinkingOptions,
     showThinkingSection: presentation.showThinkingSection,
     modelLabel: presentation.modelLabel,
@@ -744,15 +796,21 @@ export function renderRendererModelPicker(
   // force-close it under the pointer. It refreshes once a real catalog returns.
   const keepOpenMenu = popoverOpen(control.menu) && isTransientPickerState(view);
   if (control.root.dataset.catalogSignature !== catalogSignature && !keepOpenMenu) {
-    rebuildOptions(control, view);
+    rebuildOptions(
+      control,
+      view.catalog ? { ...view, catalog: { ...view.catalog, models: visibleModels ?? [] } } : view,
+    );
     control.root.dataset.catalogSignature = catalogSignature;
   }
 
   syncRendererLabelText(control.label, presentation.modelLabel);
   control.label.title = presentation.modelLabel;
   const secondaryLabel = presentation.thinkingLabel ?? presentation.resolvedModelLabel;
-  syncRendererLabelText(control.thinkingLabel, secondaryLabel ?? "");
-  control.thinkingLabel.hidden = secondaryLabel === undefined;
+  syncRendererLabelText(
+    control.thinkingLabel,
+    view.status === "selecting" ? "Applying…" : (secondaryLabel ?? ""),
+  );
+  control.thinkingLabel.hidden = view.status !== "selecting" && secondaryLabel === undefined;
   const accessibleLabel = secondaryLabel
     ? `${presentation.modelLabel}, ${secondaryLabel}`
     : presentation.modelLabel;
@@ -765,6 +823,10 @@ export function renderRendererModelPicker(
   control.trigger.disabled = isRendererModelPickerDisabled(view);
   if (shouldCloseRendererModelPicker(view) && !keepOpenMenu) control.close();
   control.modelButton.disabled = control.trigger.disabled;
+  for (const input of control.menu.querySelectorAll<HTMLButtonElement | HTMLSelectElement>(
+    "[data-model-configuration]",
+  ))
+    input.disabled = control.trigger.disabled;
   // The search input must not mirror the trigger's disabled state: disabling a
   // focused element blurs it, which would drop the cursor out of the box during
   // transient states (e.g. "selecting"). Filtering is client-side and safe.

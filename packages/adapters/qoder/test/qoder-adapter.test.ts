@@ -2380,7 +2380,7 @@ describe("QoderAdapter", () => {
       expect(snapshot?.contextWindowTokens).toBe(200_000);
     });
 
-    it("parses userQuota and expiresAt from getUsageInfo envelope", () => {
+    it("keeps session credits without mislabeling account quota as a five-hour limit", () => {
       const tracker = new QoderUsageTracker();
       tracker.observeUsageInfo({
         usage: {
@@ -2403,8 +2403,8 @@ describe("QoderAdapter", () => {
 
       const snapshot = tracker.snapshot();
       expect(snapshot?.totalCredits).toBe(1.25);
-      expect(snapshot?.planFiveHourUsedPercent).toBe(42);
-      expect(snapshot?.planFiveHourResetsAtUnix).toBe(1741824000);
+      expect(snapshot?.planFiveHourUsedPercent).toBeUndefined();
+      expect(snapshot?.planFiveHourResetsAtUnix).toBeUndefined();
     });
 
     it("derives contextUsedTokens when getContextUsage only reports usedPercentage", () => {

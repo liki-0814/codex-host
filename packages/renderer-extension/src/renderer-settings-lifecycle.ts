@@ -1,3 +1,4 @@
+import type { RendererModelsClient } from "./settings/models-page.js";
 import { readCodexLocaleSettings, type CodexLocaleSettings } from "./codex-locale-adapter.js";
 import {
   rendererSettingsMessages,
@@ -24,6 +25,7 @@ const UPDATE_CHECK_TIMEOUT_MS = 5_000;
 const UPDATE_RETRY_DELAYS_MS = [1_000, 3_000, 10_000, 30_000] as const;
 
 export interface RendererSettingsLifecycleOptions {
+  getModelsClient?(): RendererModelsClient | null;
   getUpdateClient?(): RendererUpdateClient | null;
   getConnectionDiagnostics?(): RendererConnectionDiagnostics | null;
   getAccountClient?(): RendererCodexAccountClient | null;
@@ -74,6 +76,7 @@ export function installRendererSettingsLifecycle(
         await options.openImportedThread(threadId, signal);
         if (!disposed && !signal.aborted) shell?.close();
       },
+      options.getModelsClient ?? (() => null),
     );
     const nextShell = installRendererSettingsShell(definitions, messages, ownerWindow.document);
     const nextTrigger = installRendererSettingsHeaderTrigger({

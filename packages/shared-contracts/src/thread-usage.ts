@@ -78,6 +78,9 @@ const usagePercentSchema = z.number().finite().min(0).max(100);
 export const accountCreditsProductUsageSchema = z
   .object({
     product: z.string().min(1),
+    used: z.number().finite().nonnegative().optional(),
+    limit: z.number().finite().positive().optional(),
+    unit: z.string().min(1).max(32).optional(),
     usagePercent: usagePercentSchema,
     resetsAt: z.string().min(1).optional(),
   })
@@ -93,6 +96,9 @@ export const accountResetCreditsSchema = z
 
 export const accountCreditsSnapshotSchema = z
   .object({
+    used: z.number().finite().nonnegative().optional(),
+    limit: z.number().finite().positive().optional(),
+    unit: z.string().min(1).max(32).optional(),
     /** Native label when the primary limit is scoped to a model or product group. */
     label: z.string().min(1).optional(),
     usedPercent: usagePercentSchema,

@@ -176,16 +176,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function piTransportModelId(
   model?: HarnessModelRef,
   thinkingOptionId?: HarnessThinkingOptionId,
+  permissionModeId?: HarnessPermissionModeId,
 ): string {
   if (!model) {
-    if (thinkingOptionId) throw new Error("Pi transport Thinking requires a Model Ref");
+    if (thinkingOptionId || permissionModeId)
+      throw new Error("Pi transport Thinking requires a Model Ref");
     return PI_TRANSPORT_MODEL_ID;
   }
   const parsedModel = harnessModelRefSchema.parse(model);
   const parsedThinking = thinkingOptionId
     ? harnessThinkingOptionIdSchema.parse(thinkingOptionId)
     : undefined;
-  return `${PI_TRANSPORT_MODEL_PREFIX}${parsedModel.id}${parsedThinking ? `@${parsedThinking}` : ""}`;
+  return `${PI_TRANSPORT_MODEL_PREFIX}${parsedModel.id}${permissionModeId ? `@${parsedThinking ?? ""}@${harnessPermissionModeIdSchema.parse(permissionModeId)}` : parsedThinking ? `@${parsedThinking}` : ""}`;
 }
 
 export function ompTransportModelId(
@@ -456,13 +458,23 @@ export function isDeepSeekHarnessTransportModelId(value: unknown): value is stri
 export function decodePiTransportModelId(value: unknown): {
   model?: HarnessModelRef;
   thinkingOptionId?: HarnessThinkingOptionId;
+  permissionModeId?: HarnessPermissionModeId;
 } | null {
   if (value === PI_TRANSPORT_MODEL_ID) return {};
   if (typeof value !== "string" || !value.startsWith(PI_TRANSPORT_MODEL_PREFIX)) return null;
   const components = value.slice(PI_TRANSPORT_MODEL_PREFIX.length).split("@");
-  if (components.length < 1 || components.length > 2) return null;
-  const [modelId, thinkingOptionId] = components;
+  if (components.length < 1 || components.length > 3) return null;
+  const [modelId, thinkingOptionId, permissionModeId] = components;
   if (components.length === 2 && !thinkingOptionId) return null;
+  if (components.length === 3 && !permissionModeId) {
+    return null;
+  }
+  const permission = permissionModeId
+    ? harnessPermissionModeIdSchema.safeParse(permissionModeId)
+    : null;
+  if (permission && !permission.success) {
+    return null;
+  }
   const model = harnessModelRefSchema.safeParse({ id: modelId });
   if (!model.success) return null;
   const thinking = thinkingOptionId
@@ -472,6 +484,7 @@ export function decodePiTransportModelId(value: unknown): {
   return {
     model: model.data,
     ...(thinking?.success ? { thinkingOptionId: thinking.data } : {}),
+    ...(permission?.success ? { permissionModeId: permission.data } : {}),
   };
 }
 
@@ -953,7 +966,7 @@ export function modelSelectionForAgent(
 ): ModelPowerSelection | null {
   const transportModelId =
     agent === "pi"
-      ? piTransportModelId(model, thinkingOptionId)
+      ? piTransportModelId(model, thinkingOptionId, permissionModeId)
       : agent === "claude-code"
         ? claudeTransportModelId(model, permissionModeId, thinkingOptionId)
         : agent === "deepseek-harness"
@@ -1093,6 +1106,11 @@ export function installCurrentRendererAdapter(): {
       const client = currentModelClient();
       if (!client.listHarnessPlugins) throw new Error("Harness plugin directory is unavailable");
       return client.listHarnessPlugins();
+    },
+    extension: async (input: Parameters<NonNullable<RendererModelClient["extension"]>>[0]) => {
+      const client = currentModelClient();
+      if (!client.extension) throw new Error("Extension management is unavailable");
+      return client.extension(input);
     },
     forkThread: (input: ExternalThreadForkParams) => currentModelClient().forkThread(input),
     inspectHarness: (input: HarnessInspectParams) => currentModelClient().inspectHarness(input),

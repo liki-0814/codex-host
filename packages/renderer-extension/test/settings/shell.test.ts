@@ -23,6 +23,7 @@ describe("Renderer settings foundation", () => {
     expect(pages.map(({ label }) => label)).toEqual([
       "Connections",
       "Accounts",
+      "Models",
       "Session Import",
       "Appearance",
       "Updates",
@@ -31,6 +32,7 @@ describe("Renderer settings foundation", () => {
     expect(pages.map(({ icon }) => icon)).toEqual([
       "connections",
       "accounts",
+      "model-pool",
       "session-import",
       "settings",
       "updates",
@@ -65,6 +67,7 @@ describe("Renderer settings foundation", () => {
     expect(pages.map(({ id }) => id)).toEqual([
       "connections",
       "accounts",
+      "models",
       "session-import",
       "appearance",
       "updates",

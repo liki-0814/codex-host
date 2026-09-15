@@ -1,9 +1,11 @@
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { installPiFastExtension } from "../src/pi-fast-extension.js";
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 import {
+  configuredModelRef,
   harnessPermissionModeIdSchema,
   harnessThinkingOptionIdSchema,
   hostTurnIdSchema,
@@ -87,6 +89,12 @@ class FakePiTransport implements PiTurnTransport {
         ? (this.history.entries.at(-1)?.id as string)
         : null;
     return this.deriveState();
+  });
+  readonly selectPermissionMode = vi.fn(async (mode: string) => {
+    void mode;
+  });
+  readonly selectFastMode = vi.fn(async (enabled: boolean) => {
+    void enabled;
   });
   readonly clone = vi.fn(async () => this.deriveState());
   readonly verifySessionCwd = vi.fn(async () => undefined);
@@ -938,6 +946,72 @@ describe("Pi HarnessAdapter Session", () => {
     ).resolves.toMatchObject({ ok: false, error: { code: "nativeFailure" } });
     expect(transports[0]?.close).toHaveBeenCalledOnce();
     await adapter.close();
+  });
+
+  it("applies final Fast draft at send without restarting or reselecting the same native model", async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), "pi-fast-turn-"));
+    const environment = { HOME: home };
+    await mkdir(path.join(home, ".codex"));
+    await writeFile(
+      path.join(home, ".codex", "models_cache.json"),
+      JSON.stringify({ models: [{ slug: "test-model", service_tiers: [{ id: "priority" }] }] }),
+    );
+    await installPiFastExtension(environment);
+    const { adapter, transports, dependencies } = fixture({ environment });
+    try {
+      const base = encodePiModelRef({ provider: "openai-codex", id: "test-model" });
+      const opened = await adapter.open({ kind: "create", cwd: "/synthetic", model: base });
+      if (!opened.ok) throw new Error(opened.error.message);
+      const session = opened.value;
+      const consume = (async () => {
+        for await (const output of session.outputs) {
+          void output;
+        }
+      })();
+      for (const [index, value] of ["true", "true", "false"].entries()) {
+        const result = await session.execute({
+          ...textTurn("fast-" + index),
+          model: configuredModelRef(base, { fast: value }),
+        });
+        expect(result.ok).toBe(true);
+        const transport = transports[0];
+        if (!transport) throw new Error("Missing transport");
+        await vi.waitFor(() => expect(transport.resolveTurn).not.toBeNull());
+        transport.succeed("ok");
+        await vi.waitFor(() => expect(transport.onEvent).toBeNull());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      expect(dependencies.createTransport).toHaveBeenCalledOnce();
+      expect(transports[0]?.selectFastMode.mock.calls).toEqual([[true], [false]]);
+      expect(transports[0]?.selectModel).toHaveBeenCalledOnce();
+      await session.close();
+      await consume;
+    } finally {
+      await adapter.close();
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("verifies installation through native commands and invalidates cached capabilities", async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), "pi-install-test-"));
+    const { adapter, transports } = fixture({ environment: { HOME: home } });
+    try {
+      expect(await adapter.inspect({ cwd: "/synthetic" })).toMatchObject({
+        capabilities: { configuration: { selectPermissionMode: false } },
+      });
+      expect(await adapter.extension("permissions", "install")).toEqual({ installed: true });
+      expect(
+        transports.some((t) =>
+          t.selectPermissionMode.mock.calls.some(([mode]) => mode === "approve"),
+        ),
+      ).toBe(true);
+      expect(await adapter.inspect({ cwd: "/synthetic" })).toMatchObject({
+        capabilities: { configuration: { selectPermissionMode: true } },
+      });
+    } finally {
+      await adapter.close();
+      await rm(home, { recursive: true, force: true });
+    }
   });
 
   it("does not manufacture a Permission Mode capability", async () => {
@@ -2263,6 +2337,16 @@ describe("Pi HarnessAdapter Session", () => {
       await nextEvent(iterator);
       await nextEvent(iterator);
       await nextEvent(iterator);
+      if (request.method === "confirm") {
+        transports[0]?.event({
+          type: "tool.started",
+          callId: "approval-command",
+          toolName: "bash",
+          arguments: { command: "printf fixture" },
+        });
+        const started = await nextEvent(iterator);
+        expect(started).toMatchObject({ type: "item.started", item: { type: "commandExecution" } });
+      }
       transports[0]?.event({ type: "interaction.requested", request });
       const interaction = await nextInteraction(iterator);
       expect(interaction.type).toBe("question");

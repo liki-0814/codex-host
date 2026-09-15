@@ -685,6 +685,28 @@ describe("current Codex Renderer Agent adapter", () => {
     expect(modelSelectionForAgent(null, null, "codex")).toBeNull();
   });
 
+  it.each([undefined, "high"])(
+    "retains Pi approval in the actual composer carrier with thinking %s",
+    (level) => {
+      const model = harnessModelRefSchema.parse({ id: "pi-model-v1.synthetic" });
+      const thinkingOptionId = level ? harnessThinkingOptionIdSchema.parse(level) : undefined;
+      const permissionModeId = harnessPermissionModeIdSchema.parse("approve");
+      const carrier = modelSelectionForAgent(
+        null,
+        null,
+        "pi",
+        model,
+        thinkingOptionId,
+        permissionModeId,
+      )?.model;
+      expect(decodePiTransportModelId(carrier)).toEqual({
+        model,
+        permissionModeId,
+        ...(thinkingOptionId ? { thinkingOptionId } : {}),
+      });
+    },
+  );
+
   it("encodes selected Pi Model and Thinking in the transport carrier", () => {
     const model = harnessModelRefSchema.parse({ id: "pi-model-v1.synthetic" });
     const thinkingOptionId = harnessThinkingOptionIdSchema.parse("xhigh");

@@ -1,3 +1,6 @@
+import { listSubagents, getSubagentMessages } from "@qoder-ai/qoder-agent-sdk";
+import type { HarnessSubagentCapability } from "@codexhost/harness-adapter";
+import { projectQoderAccount } from "./qoder-account.js";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type {
@@ -10,6 +13,7 @@ import type {
 } from "@codexhost/harness-adapter";
 import {
   harnessIdSchema,
+  harnessPermissionModeIdSchema,
   nativeCheckpointRefSchema,
   nativeSessionRefSchema,
   type HarnessId,
@@ -28,7 +32,7 @@ import {
   qoderEnvironment,
   resolveQoderExecutable,
 } from "./qoder-command.js";
-import { mapQoderSnapshot } from "./qoder-history.js";
+import { mapQoderSnapshot, mapQoderSubagentSnapshot } from "./qoder-history.js";
 import { decodeQoderModelRef, parseQoderModelCatalog } from "./qoder-models.js";
 import {
   mapToQoderPermissionMode,
@@ -42,6 +46,7 @@ import type {
   GetSessionMessagesOptions,
   QoderModelInfo,
   QoderQueryFactory,
+  QoderQuery,
   SDKSessionInfo,
   SessionMessage,
 } from "./qoder-sdk-types.js";
@@ -74,6 +79,39 @@ export interface QoderAdapterOptions {
 export class QoderAdapter implements HarnessAdapter {
   readonly harnessId: HarnessId = harnessIdSchema.parse("qoder");
   readonly commandCatalog = QODER_FALLBACK_COMMAND_CATALOG;
+  readonly subagents: HarnessSubagentCapability = {
+    readSnapshot: async ({ parent, nativeSubagentId, cwd }) => {
+      if (parent.harnessId !== this.harnessId)
+        return {
+          ok: false,
+          error: { code: "invalidRequest", message: "Invalid Qoder parent", retryable: false },
+        };
+      try {
+        if (!(await listSubagents(parent.nativeSessionId, { dir: cwd })).includes(nativeSubagentId))
+          return {
+            ok: false,
+            error: {
+              code: "invalidRequest",
+              message: "Qoder subagent is not associated with this parent",
+              retryable: false,
+            },
+          };
+        const messages = await getSubagentMessages(parent.nativeSessionId, nativeSubagentId, {
+          dir: cwd,
+        });
+        return { ok: true, value: mapQoderSubagentSnapshot(messages, parent.nativeSessionId) };
+      } catch {
+        return {
+          ok: false,
+          error: {
+            code: "unavailable",
+            message: "Qoder subagent transcript is unavailable",
+            retryable: true,
+          },
+        };
+      }
+    },
+  };
 
   readonly #commandOverride: string | undefined;
   readonly #environment: Record<string, string | undefined>;
@@ -109,6 +147,44 @@ export class QoderAdapter implements HarnessAdapter {
     this.#getSessionInfo = options.getSessionInfo ?? defaultGetSessionInfo;
     this.#getAvailableModels = options.getAvailableModels;
     this.#resolveExecutable = options.resolveExecutable ?? resolveQoderExecutable;
+  }
+
+  readonly #accountProbes = new Set<QoderQuery>();
+  #closed = false;
+
+  async inspectAccount() {
+    if (this.#closed) return null;
+    const executable = this.#resolveExecutable({
+      ...(this.#commandOverride ? { command: this.#commandOverride } : {}),
+      environment: this.#environment,
+    });
+    const probe = this.#queryFactory({
+      prompt: "",
+      options: {
+        cwd: process.cwd(),
+        pathToQoderCLIExecutable: executable,
+        env: this.#environment,
+        auth: qoderAuthForEnvironment(this.#environment),
+      },
+    });
+    this.#accountProbes.add(probe);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        Promise.all([probe.getUsageInfo?.(), probe.accountInfo?.().catch(() => undefined)]).then(
+          ([usage, identity]) => projectQoderAccount(usage, identity),
+        ),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), 10000);
+        }),
+      ]);
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+      this.#accountProbes.delete(probe);
+      await probe.close();
+    }
   }
 
   async inspect(input?: InspectHarnessInput): Promise<HarnessInspection> {
@@ -176,6 +252,7 @@ export class QoderAdapter implements HarnessAdapter {
           catalog,
           permissionModes: QODER_PERMISSION_MODE_CATALOG,
           capabilities: {
+            subagents: { observe: true, readTranscript: true },
             configuration: {
               selectModel: true,
               selectThinkingOption: catalog.thinkingOptions.length > 0,
@@ -435,9 +512,11 @@ export class QoderAdapter implements HarnessAdapter {
       cwd: input.cwd,
       environment,
       ...("model" in input && input.model ? { model: input.model } : {}),
-      ...("permissionModeId" in input && input.permissionModeId
-        ? { permissionModeId: input.permissionModeId }
-        : {}),
+      ...(input.kind === "create" && input.executionPolicy === "unattended-full-access"
+        ? { permissionModeId: harnessPermissionModeIdSchema.parse("bypassPermissions") }
+        : "permissionModeId" in input && input.permissionModeId
+          ? { permissionModeId: input.permissionModeId }
+          : {}),
       ...("thinkingOptionId" in input && input.thinkingOptionId
         ? { thinkingOptionId: input.thinkingOptionId }
         : {}),
@@ -456,10 +535,13 @@ export class QoderAdapter implements HarnessAdapter {
   }
 
   async close(): Promise<void> {
+    this.#closed = true;
+    const probes = [...this.#accountProbes];
+    this.#accountProbes.clear();
     const sessions = [...this.#sessions];
     this.#sessions.clear();
     this.#inspections.clear();
     this.#inFlightInspections.clear();
-    await Promise.all(sessions.map((s) => s.close()));
+    await Promise.all([...sessions, ...probes].map((s) => s.close()));
   }
 }

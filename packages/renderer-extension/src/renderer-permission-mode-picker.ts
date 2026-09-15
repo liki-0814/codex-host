@@ -99,11 +99,12 @@ export function rendererPermissionModeMenuPlacement(
   triggerRect: Pick<DOMRectReadOnly, "left" | "top">,
   viewport: { width: number; height: number },
   windowZoom: number,
+  preferredWidth = 320,
 ): { width: number; left: number; bottom: number } {
   const zoom = Number.isFinite(windowZoom) && windowZoom > 0 ? windowZoom : 1;
   const viewportWidth = viewport.width / zoom;
   const viewportHeight = viewport.height / zoom;
-  const width = Math.min(320, viewportWidth - 16);
+  const width = Math.min(preferredWidth, viewportWidth - 16);
   return {
     width,
     left: Math.max(8, Math.min(triggerRect.left / zoom, viewportWidth - width - 8)),
@@ -120,6 +121,7 @@ function positionMenu(control: RendererPermissionModePickerControl): void {
     rect,
     { width: window.innerWidth, height: window.innerHeight },
     Number.parseFloat(rawWindowZoom),
+    control.menu.dataset.grouped === "true" ? 240 : 320,
   );
   control.menu.style.width = `${placement.width}px`;
   control.menu.style.left = `${placement.left}px`;
@@ -316,10 +318,58 @@ function rebuildOptions(
   control: RendererPermissionModePickerControl,
   catalog: HarnessPermissionModeCatalog,
   locale: RendererSettingsLocale,
+  selectedId?: HarnessPermissionModeId,
 ): void {
   control.options.clear();
   control.menu.replaceChildren();
-  for (const mode of catalog.modes) {
+  const grouped = Boolean(catalog.dimensions?.length);
+  control.menu.dataset.grouped = String(grouped);
+  control.menu.style.border = "none";
+  const selected = catalog.modes.find((m) => m.id === selectedId) ?? catalog.modes[0];
+  const rows =
+    catalog.dimensions?.flatMap((dimension) => {
+      const values = [
+        ...new Set(
+          catalog.modes
+            .map((m) => m.values?.[dimension.id])
+            .filter((v): v is string => v !== undefined),
+        ),
+      ];
+      return values.flatMap((value, index) => {
+        const mode = catalog.modes.find(
+          (m) =>
+            m.values?.[dimension.id] === value &&
+            catalog.dimensions?.every(
+              (d) => d.id === dimension.id || m.values?.[d.id] === selected?.values?.[d.id],
+            ),
+        );
+        return mode
+          ? [
+              {
+                mode: { ...mode, label: value, description: "", dangerous: false },
+                section: index === 0 ? dimension.label : undefined,
+                key: `${dimension.id}:${value}`,
+              },
+            ]
+          : [];
+      });
+    }) ?? catalog.modes.map((mode) => ({ mode, section: undefined, key: mode.id }));
+  for (const { mode, section, key } of rows) {
+    if (section) {
+      if (control.menu.childElementCount > 0) {
+        const divider = document.createElement("div");
+        divider.setAttribute("role", "separator");
+        divider.style.cssText =
+          "height:1px;margin:4px -4px;background:var(--color-token-border, rgba(128,128,128,.18))";
+        control.menu.append(divider);
+      }
+      const heading = document.createElement("div");
+      heading.className = "px-2 pb-1 pt-2 text-xs text-token-text-tertiary";
+      heading.style.fontWeight = "400";
+      heading.textContent = section;
+      control.menu.append(heading);
+    }
+
     const presentation = rendererPermissionModePresentation(mode, locale);
     const button = document.createElement("button");
     button.type = "button";
@@ -327,17 +377,25 @@ function rebuildOptions(
     button.setAttribute("role", "menuitemradio");
     button.className = OPTION_CLASSES;
     button.style.letterSpacing = "0";
+    if (grouped) {
+      button.style.padding = "6px 8px";
+      button.style.alignItems = "center";
+    }
     if (mode.dangerous) button.style.color = "var(--color-text-danger, #c2413b)";
 
-    const modeIcon = document.createElement("span");
-    modeIcon.className = "inline-flex h-5 w-5 shrink-0 items-center justify-center";
-    modeIcon.append(icon(mode.dangerous ? ShieldAlert : Shield, 17));
+    if (!grouped) {
+      const modeIcon = document.createElement("span");
+      modeIcon.className = "inline-flex h-5 w-5 shrink-0 items-center justify-center";
+      modeIcon.append(icon(mode.dangerous ? ShieldAlert : Shield, 17));
+      button.append(modeIcon);
+    }
 
     const copy = document.createElement("span");
     copy.className = "min-w-0 flex-1";
     const title = document.createElement("span");
     title.textContent = presentation.label;
     title.className = "block font-medium";
+    if (grouped) title.style.fontWeight = "400";
     title.style.letterSpacing = "0";
     copy.append(title);
     if (presentation.description) {
@@ -352,9 +410,10 @@ function rebuildOptions(
 
     const check = icon(Check, 16);
     check.classList.add("mt-0.5", "shrink-0");
+    if (grouped) check.style.marginTop = "0";
     check.style.visibility = "hidden";
-    button.append(modeIcon, copy, check);
-    control.options.set(mode.id, { button, check, mode });
+    button.append(copy, check);
+    control.options.set(key, { button, check, mode });
     control.menu.append(button);
   }
 }
@@ -378,9 +437,9 @@ export function renderRendererPermissionModePicker(
     control.close();
     return;
   }
-  const signature = `${locale}:${JSON.stringify(view.catalog)}`;
+  const signature = `${locale}:${JSON.stringify(view.catalog)}:${view.catalog?.dimensions ? view.selected : ""}`;
   if (view.catalog && control.root.dataset.catalogSignature !== signature) {
-    rebuildOptions(control, view.catalog, locale);
+    rebuildOptions(control, view.catalog, locale, view.selected);
     control.root.dataset.catalogSignature = signature;
   }
   const label = rendererPermissionModeLabel(view, locale);
@@ -404,8 +463,8 @@ export function renderRendererPermissionModePicker(
   control.trigger.setAttribute("aria-busy", String(view.status === "selecting"));
   if (control.trigger.disabled) control.close();
 
-  for (const [id, option] of control.options) {
-    const selected = id === view.selected;
+  for (const option of control.options.values()) {
+    const selected = option.mode.id === view.selected;
     option.button.disabled = locked || (view.status !== "ready" && view.status !== "error");
     option.button.setAttribute("aria-checked", String(selected));
     option.check.style.visibility = selected ? "visible" : "hidden";

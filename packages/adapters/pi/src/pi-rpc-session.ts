@@ -1,3 +1,8 @@
+import { installedPiFastExtension, PI_FAST_COMMAND } from "./pi-fast-extension.js";
+import {
+  installedPiPermissionExtension,
+  PI_PERMISSION_COMMAND,
+} from "./pi-permission-extension.js";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -440,7 +445,11 @@ export function piRpcProcessCommand(
   const thinkingArguments = options.emptySessionConfiguration
     ? ["--thinking", options.emptySessionConfiguration.thinkingLevel]
     : [];
+  const permissionExtension = installedPiPermissionExtension(options.environment);
   const arguments_ = [
+    ...[permissionExtension, installedPiFastExtension(options.environment)].flatMap((file) =>
+      file ? ["--extension", file] : [],
+    ),
     "--mode",
     "rpc",
     ...modelArguments,
@@ -706,6 +715,27 @@ export class PiRpcSession {
       if (error instanceof PiRpcFaultError) this.#fail(error);
       throw error;
     }
+  }
+
+  #extensionModes = new Map<string, string>();
+  async selectPermissionMode(mode: string): Promise<void> {
+    if (mode !== "auto" && mode !== "approve") throw new Error("Unknown Pi permission mode");
+    await this.#selectExtensionMode(PI_PERMISSION_COMMAND, mode);
+  }
+  async selectFastMode(enabled: boolean): Promise<void> {
+    await this.#selectExtensionMode(PI_FAST_COMMAND, enabled ? "on" : "off");
+  }
+  async #selectExtensionMode(name: string, mode: string): Promise<void> {
+    if (this.#extensionModes.get(name) === mode) return;
+    const response = await this.#send("get_commands", {});
+    const result = isRecord(response.data) ? response.data : {};
+    if (
+      !Array.isArray(result.commands) ||
+      !result.commands.some((command) => isRecord(command) && command.name === name)
+    )
+      throw new Error("Pi extension is not loaded. Reopen this conversation.");
+    await this.#send("prompt", { message: `/${name} ${mode}` });
+    this.#extensionModes.set(name, mode);
   }
 
   async selectModel(model: PiNativeModelRef): Promise<PiSessionState> {

@@ -1,5 +1,6 @@
 import {
   harnessModelCatalogSchema,
+  readConfiguredModelRef,
   harnessModelRefSchema,
   harnessThinkingOptionIdSchema,
   harnessThinkingOptionSchema,
@@ -57,7 +58,7 @@ export function encodePiModelRef(model: PiNativeModelRef): HarnessModelRef {
 }
 
 export function decodePiModelRef(ref: HarnessModelRef): PiNativeModelRef {
-  const parsedRef = harnessModelRefSchema.parse(ref);
+  const parsedRef = harnessModelRefSchema.parse(readConfiguredModelRef(ref)?.model ?? ref);
   if (!parsedRef.id.startsWith(PI_MODEL_REF_PREFIX)) {
     throw new Error("Model Ref does not belong to PiAdapter");
   }

@@ -34,6 +34,12 @@ export function creditsPeriodLabel(
 export function creditsProductLabel(product: string, messages: RendererSettingsMessages): string {
   if (product === "GrokBuild" || product === "Build") return messages.accountCreditsBuild;
   if (product === "7-day window") return messages.accountCreditsPeriodSevenDay;
+  if (product === "Auto · monthly") return `Auto · ${messages.accountCreditsPeriodMonthly}`;
+  if (product === "API · monthly") return `API · ${messages.accountCreditsPeriodMonthly}`;
+  if (product === "Shared resource credits")
+    return messages.locale === "zh-CN" ? "共享资源包" : "Shared resource package";
+  if (product === "Plan credits")
+    return messages.locale === "zh-CN" ? "套餐 Credits" : "Plan credits";
   if (product === "GrokChat") return "Chat";
   if (product === "GrokImagine") return "Imagine";
   if (product === "GrokVoice") return "Voice";
@@ -77,6 +83,7 @@ export function resetCreditDetailLine(
 type AccountUsagePeriod = "five_hour" | "seven_day";
 
 interface AccountUsageWindow {
+  readonly amount?: Pick<AccountCreditsSnapshot, "used" | "limit" | "unit">;
   readonly label: string;
   readonly usedPercent: number;
   readonly resetsAt: string | undefined;
@@ -159,8 +166,11 @@ function splitUsageWindows(
   };
 
   const primary: AccountUsageWindow = {
-    label: credits.label ?? creditsPeriodLabel(credits.periodType, messages),
+    label: credits.label
+      ? creditsProductLabel(credits.label, messages)
+      : creditsPeriodLabel(credits.periodType, messages),
     usedPercent: credits.usedPercent,
+    amount: credits,
     resetsAt: credits.resetsAt,
     scoped: Boolean(credits.label && scopedUsageProduct(credits.label)),
   };
@@ -176,6 +186,7 @@ function splitUsageWindows(
     const window: AccountUsageWindow = {
       label: creditsProductLabel(product.product, messages),
       usedPercent: product.usagePercent,
+      amount: product,
       resetsAt: product.resetsAt,
       scoped: Boolean(scoped),
     };
@@ -242,6 +253,15 @@ function renderUsageWindow(
   fill.style.width = `${Math.min(100, Math.max(0, value))}%`;
   bar.append(fill);
   meter.append(label, percent, bar);
+  const credits = window.amount;
+  if (credits && credits.used !== undefined && credits.limit !== undefined && credits.unit) {
+    const amount = document.createElement("div");
+    amount.className = "settings-account-quota-amount";
+    const value =
+      display === "remaining" ? Math.max(0, credits.limit - credits.used) : credits.used;
+    amount.textContent = `${value.toLocaleString(messages.locale)} / ${credits.limit.toLocaleString(messages.locale)} ${credits.unit}`;
+    meter.append(amount);
+  }
   if (reset) meter.append(reset.timestamp);
   return meter;
 }
@@ -260,7 +280,7 @@ export function renderAccountUsage(
 } {
   if (state?.status !== "ready") {
     const cell = document.createElement("td");
-    cell.colSpan = 2;
+    cell.colSpan = 1;
     cell.className = "settings-account-usage-cell settings-account-usage-cell--message";
     const usage = document.createElement("div");
     usage.className = "settings-account-usage";
@@ -288,35 +308,33 @@ export function renderAccountUsage(
     return { cells: [cell], continuationCells: [], additional: null };
   }
   const { rows, additional } = splitUsageWindows(state.credits, messages, filter);
-  const renderCells = (row: AccountUsageRow): HTMLTableCellElement[] =>
-    (["five_hour", "seven_day"] as const).map((period) => {
-      const cell = document.createElement("td");
-      cell.className = "settings-account-usage-cell";
+  const cell = document.createElement("td");
+  cell.className = "settings-account-usage-cell";
+  const grid = document.createElement("div");
+  grid.className = "settings-account-quota-grid";
+  for (const row of rows) {
+    for (const period of ["five_hour", "seven_day"] as const) {
       const window = row.columns[period];
-      if (window) cell.append(renderUsageWindow(document, window, messages, display));
-      else {
-        const missing = document.createElement("div");
-        missing.className = "settings-account-usage__missing";
-        const label = document.createElement("span");
-        label.className = "settings-account-usage__title";
-        label.textContent = row.scope ?? creditsPeriodLabel(period, messages);
-        const dash = document.createElement("span");
-        dash.textContent = "—";
-        dash.setAttribute("aria-hidden", "true");
-        missing.append(label, dash);
-        cell.append(missing);
-      }
-      return cell;
-    });
-  const [firstRow = { columns: {} }, ...continuations] = rows;
-  const cells = renderCells(firstRow);
-  const continuationCells = continuations.map(renderCells);
-  if (!additional.length) return { cells, continuationCells, additional: null };
-  const extra = document.createElement("div");
-  extra.className = "settings-account-extra-usage";
+      if (!window) continue;
+      grid.append(
+        renderUsageWindow(
+          document,
+          {
+            ...window,
+            label: row.scope
+              ? `${row.scope} · ${creditsPeriodLabel(period, messages)}`
+              : window.label,
+          },
+          messages,
+          display,
+        ),
+      );
+    }
+  }
   for (const window of additional)
-    extra.append(renderUsageWindow(document, window, messages, display));
-  return { cells, continuationCells, additional: extra };
+    grid.append(renderUsageWindow(document, window, messages, display));
+  cell.append(grid);
+  return { cells: [cell], continuationCells: [], additional: null };
 }
 
 export function renderAccountResetCredits(

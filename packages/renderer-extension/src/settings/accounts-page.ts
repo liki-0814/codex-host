@@ -147,7 +147,7 @@ export function createAccountsSettingsPage(
         if (visibleAccounts.length + visibleHarnessAccounts.length === 0) {
           const emptyRow = document.createElement("tr");
           const emptyCell = document.createElement("td");
-          emptyCell.colSpan = 4;
+          emptyCell.colSpan = 3;
           emptyCell.className = "settings-account-empty";
           emptyCell.textContent = query ? messages.accountNoMatches : messages.accountEmpty;
           emptyRow.append(emptyCell);

@@ -1,3 +1,7 @@
+import {
+  harnessExtensionParamsSchema,
+  harnessExtensionStateSchema,
+} from "@codexhost/shared-contracts";
 import { AccountRateLimits } from "./codex-runtime/account-rate-limits.js";
 import { NativeAccountObserver } from "./native-account-observer.js";
 import { HarnessAccountInspectionCache, listHarnessAccountSources } from "./harness-accounts.js";
@@ -853,6 +857,43 @@ export class AppServerHost {
         request.method === "codexhost/account/refresh"
       ) {
         this.#dispatchDesktopRequest(() => this.#handleCodexAccountRequest(request));
+        continue;
+      }
+      if (request.method === "codexhost/harness/extension") {
+        this.#dispatchDesktopRequest(async () => {
+          const params = harnessExtensionParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            await this.#writer.json(rpcError(request, -32602, "Invalid Harness extension request"));
+            return;
+          }
+          const adapter = this.#externalAdapters.get(params.data.harnessId);
+          if (!adapter?.extension) {
+            await this.#writer.json(
+              rpcError(request, -32601, "Harness extension installation is unavailable"),
+            );
+            return;
+          }
+          try {
+            const result = harnessExtensionStateSchema.parse(
+              await adapter.extension(params.data.extensionId, params.data.action),
+            );
+            await this.#writer.json(
+              rpcEnvelope(request, {
+                result: {
+                  installed: result.installed,
+                  ...(result.available !== undefined ? { available: result.available } : {}),
+                  ...(result.updateAvailable !== undefined
+                    ? { updateAvailable: result.updateAvailable }
+                    : {}),
+                },
+              }),
+            );
+          } catch {
+            await this.#writer.json(
+              rpcError(request, -32077, "Harness extension installation failed"),
+            );
+          }
+        });
         continue;
       }
       if (request.method === "codexhost/harness/accounts/sources") {
@@ -2178,6 +2219,9 @@ export class AppServerHost {
             owner: "external",
             harnessId: resolution.thread.harnessId,
             transportModelId: resolution.thread.transportModelId,
+            ...(resolution.thread.stateObserver.state.modelCatalog
+              ? { modelCatalog: resolution.thread.stateObserver.state.modelCatalog }
+              : {}),
             ...(resolution.thread.stateObserver.state.effectiveModel
               ? { effectiveModel: resolution.thread.stateObserver.state.effectiveModel }
               : {}),
@@ -2303,6 +2347,23 @@ export class AppServerHost {
     if (await this.#writeResolutionError(request, location)) return;
     if (location.kind !== "external") {
       await this.#writer.json(rpcEnvelope(request, { result: { commands: [] } }));
+      return;
+    }
+    const session = this.#externalRuntime.get(params.data.threadId)?.session;
+    if (
+      session?.commands &&
+      !this.#externalAdapters.get(location.record.harnessId)?.commandCatalog
+    ) {
+      try {
+        const result = await session.commands.list();
+        if (!result.ok) throw new Error(result.error.message);
+        const catalog = harnessCommandCatalogSchema.parse(result.value);
+        await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(catalog) }));
+      } catch {
+        await this.#writer.json(
+          rpcError(request, -32078, "Session command catalog is unavailable"),
+        );
+      }
       return;
     }
     await this.#writeHarnessCommandCatalog(request, location.record.harnessId);
@@ -2508,6 +2569,7 @@ export class AppServerHost {
       const state = await thread.stateObserver.waitForChange(beforeRevision);
       const projected = harnessModelSelectionStateSchema.parse({
         ...(state.effectiveModel ? { effectiveModel: state.effectiveModel } : {}),
+        ...(state.modelCatalog ? { modelCatalog: state.modelCatalog } : {}),
         ...(state.resolvedModelLabel ? { resolvedModelLabel: state.resolvedModelLabel } : {}),
         ...(state.effectiveThinkingOptionId
           ? { effectiveThinkingOptionId: state.effectiveThinkingOptionId }
@@ -2569,6 +2631,7 @@ export class AppServerHost {
       const state = await thread.stateObserver.waitForChange(beforeRevision);
       const projected = harnessModelSelectionStateSchema.parse({
         ...(state.effectiveModel ? { effectiveModel: state.effectiveModel } : {}),
+        ...(state.modelCatalog ? { modelCatalog: state.modelCatalog } : {}),
         ...(state.resolvedModelLabel ? { resolvedModelLabel: state.resolvedModelLabel } : {}),
         ...(state.effectiveThinkingOptionId
           ? { effectiveThinkingOptionId: state.effectiveThinkingOptionId }
@@ -2670,6 +2733,7 @@ export class AppServerHost {
       const state = await thread.stateObserver.waitForChange(beforeRevision);
       const projected = harnessConfigurationStateSchema.parse({
         ...(state.effectiveModel ? { effectiveModel: state.effectiveModel } : {}),
+        ...(state.modelCatalog ? { modelCatalog: state.modelCatalog } : {}),
         ...(state.resolvedModelLabel ? { resolvedModelLabel: state.resolvedModelLabel } : {}),
         ...(state.effectiveThinkingOptionId
           ? { effectiveThinkingOptionId: state.effectiveThinkingOptionId }
@@ -3300,6 +3364,8 @@ export class AppServerHost {
       return;
     }
     const params = requestObject(request);
+    let stagedModel: HarnessModelRef | undefined;
+    let stagedPermissionModeId: HarnessPermissionModeId | undefined;
     if (typeof params.model === "string") {
       let route: ReturnType<typeof decodeCreateRoute>;
       try {
@@ -3308,6 +3374,19 @@ export class AppServerHost {
         await this.#writer.json(rpcError(request, -32602, errorMessage(error)));
         return;
       }
+      if (
+        route &&
+        route.harnessId === thread.harnessId &&
+        (thread.session.capabilities.configuration.modelSelectionScope === "turn" ||
+          thread.session.initialState.modelCatalog?.configurationOptions)
+      )
+        stagedModel = route.model;
+      if (
+        route &&
+        route.harnessId === thread.harnessId &&
+        thread.session.capabilities.configuration.permissionModeScope === "turn"
+      )
+        stagedPermissionModeId = route.permissionModeId;
       if (route?.harnessId !== "codex" && route?.harnessId !== thread.harnessId) {
         await this.#writer.json(
           rpcError(request, -32602, "Turn Model carrier does not belong to the Thread Harness"),
@@ -3372,7 +3451,12 @@ export class AppServerHost {
       return;
     }
     try {
-      const started = await this.#beginExternalTurn(thread, text);
+      const started = await this.#beginExternalTurn(
+        thread,
+        text,
+        stagedModel,
+        stagedPermissionModeId,
+      );
       try {
         await this.#writer.json(rpcEnvelope(request, { result: { turn: started.turn } }));
       } finally {
@@ -3415,6 +3499,8 @@ export class AppServerHost {
   async #beginExternalTurn(
     thread: ExternalThread,
     text: string,
+    model?: HarnessModelRef,
+    permissionModeId?: HarnessPermissionModeId,
   ): Promise<{
     turnId: HostTurnId;
     turn: JsonObject;
@@ -3449,6 +3535,8 @@ export class AppServerHost {
     try {
       const result = await thread.session.execute({
         type: "turn.start",
+        ...(model ? { model } : {}),
+        ...(permissionModeId ? { permissionModeId } : {}),
         turnId,
         input: [{ type: "text", text }],
       });

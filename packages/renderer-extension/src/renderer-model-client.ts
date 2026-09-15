@@ -1,4 +1,10 @@
 import {
+  harnessExtensionParamsSchema,
+  harnessExtensionStateSchema,
+  type HarnessExtensionParams,
+  type HarnessExtensionState,
+} from "@codexhost/shared-contracts";
+import {
   harnessAccountInspectParamsSchema,
   harnessAccountInspectResultSchema,
   harnessAccountSourceListResultSchema,
@@ -143,6 +149,7 @@ export interface RendererModelClient extends Partial<RendererSessionImportClient
   listHarnessPlugins?(): Promise<HarnessPluginListResult>;
   clientForHost?(hostId: string): RendererModelClient | null;
   forkThread(input: ExternalThreadForkParams): Promise<ExternalThreadForkResult>;
+  extension?(input: HarnessExtensionParams): Promise<HarnessExtensionState>;
   inspectHarness(input: HarnessInspectParams): Promise<HarnessInspection>;
   openHarnessWebUi?(input: HarnessWebUiOpenParams): Promise<void>;
   inspectThread(input: ThreadInspectionParams): Promise<ThreadInspection>;
@@ -288,6 +295,14 @@ export function createRendererModelClient(
       return externalThreadForkResultSchema.parse(result);
     },
     inspectHarness,
+    async extension(input: HarnessExtensionParams) {
+      return harnessExtensionStateSchema.parse(
+        await manager.sendRequest(
+          "codexhost/harness/extension",
+          harnessExtensionParamsSchema.parse(input),
+        ),
+      );
+    },
     async listHarnessPlugins(): Promise<HarnessPluginListResult> {
       return harnessPluginListResultSchema.parse(
         await manager.sendRequest(HARNESS_PLUGIN_LIST_METHOD, {}),

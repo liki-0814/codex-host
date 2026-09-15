@@ -1,3 +1,5 @@
+import { cursorCommands } from "./commands.js";
+import type { HarnessCommandCatalog } from "@codexhost/shared-contracts";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import {
@@ -9,15 +11,24 @@ import {
   type RequestPermissionRequest,
   type RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
+import { parseCursorAvailableModels } from "./available-models.js";
 import { cursorInvocation } from "./command.js";
 
 export interface CursorTransportOptions {
   cwd: string;
   environment: NodeJS.ProcessEnv;
   command?: string;
+  force?: boolean;
   timeoutMs?: number;
 }
-export type CursorSessionInfo = NewSessionResponse | LoadSessionResponse;
+export type CursorAvailableModel = {
+  value: string;
+  name: string;
+  configOptions: NonNullable<NewSessionResponse["configOptions"]>;
+};
+export type CursorSessionInfo = (NewSessionResponse | LoadSessionResponse) & {
+  availableModels?: CursorAvailableModel[];
+};
 export interface CursorCallbacks {
   update(value: SessionNotification): void;
   permission(value: RequestPermissionRequest): Promise<RequestPermissionResponse>;
@@ -25,6 +36,7 @@ export interface CursorCallbacks {
   notification?(method: string, params: Record<string, unknown>): void;
 }
 export class CursorTransport {
+  commandCatalog: HarnessCommandCatalog = { commands: [] };
   sessionId = "";
   replay: SessionNotification[] = [];
   #child: ChildProcessWithoutNullStreams | undefined;
@@ -62,7 +74,11 @@ export class CursorTransport {
 
   async open(sessionId?: string): Promise<CursorSessionInfo> {
     if (this.#closed || this.#connection) throw new Error("Cursor transport cannot be reopened");
-    const invocation = cursorInvocation(this.options.environment, this.options.command);
+    const invocation = cursorInvocation(
+      this.options.environment,
+      this.options.command,
+      this.options.force,
+    );
     const child = spawn(invocation.command, invocation.arguments, {
       cwd: this.options.cwd,
       env: this.options.environment,
@@ -83,6 +99,8 @@ export class CursorTransport {
       () => ({
         sessionUpdate: (value) => {
           if (this.sessionId && value.sessionId !== this.sessionId) return;
+          const catalog = cursorCommands(value);
+          if (catalog) this.commandCatalog = catalog;
           if (this.#callbacks) this.#callbacks.update(value);
           else if (this.replay.length < 100_000) this.replay.push(value);
           else throw new Error("Cursor replay exceeds the supported history limit");
@@ -108,7 +126,7 @@ export class CursorTransport {
       const init = await this.#bounded(
         this.#connection.initialize({
           protocolVersion: 1,
-          clientCapabilities: {},
+          clientCapabilities: { _meta: { parameterizedModelPicker: true } },
           clientInfo: { name: "codexhost", version: "0.6.2" },
         }),
       );
@@ -132,6 +150,13 @@ export class CursorTransport {
       await this.close();
       throw error;
     }
+  }
+
+  async availableModels(): Promise<CursorAvailableModel[]> {
+    if (!this.#connection) throw new Error("Cursor session is not open");
+    return parseCursorAvailableModels(
+      await this.#bounded(this.#connection.extMethod("cursor/list_available_models", {})),
+    );
   }
 
   async configure(configId: string, value: string) {

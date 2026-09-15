@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   hostTurnIdSchema,
+  harnessCommandDescriptorSchema,
   hostInteractionIdSchema,
   harnessPermissionModeIdSchema,
+  harnessThinkingOptionIdSchema,
   harnessInspectionSchema,
 } from "@codexhost/shared-contracts";
 import type { HarnessOutput } from "@codexhost/harness-adapter";
@@ -68,9 +70,9 @@ class FakeTransport extends CursorTransport {
     };
   }
 }
-function session() {
+function session(initial = info) {
   const transport = new FakeTransport({ cwd: process.cwd(), environment: {} });
-  const session = new CursorSession(transport, info, () => {});
+  const session = new CursorSession(transport, initial, () => {});
   const output: HarnessOutput[] = [];
   const done = (async () => {
     for await (const item of session.outputs) output.push(item);
@@ -88,6 +90,7 @@ describe("Cursor native configuration", () => {
       gate = Promise.withResolvers<typeof info>();
     const open = vi.spyOn(CursorTransport.prototype, "open").mockImplementation(() => gate.promise);
     vi.spyOn(CursorTransport.prototype, "close").mockResolvedValue();
+    vi.spyOn(CursorTransport.prototype, "availableModels").mockResolvedValue([]);
     const adapter = new CursorAdapter();
     try {
       const first = adapter.inspect();
@@ -149,13 +152,108 @@ describe("Cursor native configuration", () => {
     expect(ref.id).toMatch(/^[A-Za-z0-9._~-]+$/u);
     expect(cursorNativeModel(info, ref.id)).toBe("model[effort=high]");
     expect(() => cursorNativeModel(info, "unknown")).toThrow();
+    expect(cursorCatalog(info).models.map((model) => model.label)).toEqual(["Model"]);
     expect(cursorCatalog(info).thinkingOptions).toEqual([]);
+  });
+  it("rejects thinking.select when ACP has no independent thinking selector", async () => {
+    const f = session();
+    const configure = vi.spyOn(f.transport, "configure");
+    expect(
+      (
+        await f.session.execute({
+          type: "thinking.select",
+          thinkingOptionId: harnessThinkingOptionIdSchema.parse("high"),
+        })
+      ).ok,
+    ).toBe(false);
+    expect(configure).not.toHaveBeenCalled();
+    expect(f.session.initialState.effectiveThinkingOptionId).toBeUndefined();
+    await f.session.close();
+    await f.done;
+  });
+  it("keeps previous state when configuration fails", async () => {
+    const f = session();
+    const before = structuredClone(f.session.initialState);
+    vi.spyOn(f.transport, "configure").mockResolvedValue({ configOptions: [] });
+    expect(
+      (
+        await f.session.execute({
+          type: "model.select",
+          model: cursorModelRef("model[effort=high]"),
+        })
+      ).ok,
+    ).toBe(false);
+    expect(f.session.initialState).toEqual(before);
+    await f.session.close();
+    await f.done;
+  });
+  it("records a native-adjusted model value from the ACP response", async () => {
+    const f = session();
+    vi.spyOn(f.transport, "configure").mockResolvedValue({
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          type: "select",
+          currentValue: "model[effort=medium]",
+          options: [{ value: "model[effort=high]", name: "Model" }],
+        },
+      ],
+    });
+    expect(
+      (
+        await f.session.execute({
+          type: "model.select",
+          model: cursorModelRef("model[effort=high]"),
+        })
+      ).ok,
+    ).toBe(true);
+    expect(f.session.initialState.effectiveModel).toEqual(cursorModelRef("model[effort=medium]"));
+    await f.session.close();
+    await f.done;
+  });
+  it("submits the exact native model value advertised by ACP", async () => {
+    const f = session();
+    const configure = vi.spyOn(f.transport, "configure");
+    await f.session.execute({
+      type: "model.select",
+      model: cursorModelRef("model[effort=high]"),
+    });
+    expect(configure).toHaveBeenCalledWith("model", "model[effort=high]");
+    await f.session.close();
+    await f.done;
+  });
+  it("restores catalog and current model from session/load configOptions", () => {
+    const loaded = {
+      sessionId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          type: "select" as const,
+          currentValue: "composer-2.5[fast=true]",
+          options: [
+            { value: "default[]", name: "Auto" },
+            { value: "composer-2.5[fast=true]", name: "composer-2.5" },
+          ],
+        },
+      ],
+    };
+    const transport = new FakeTransport({ cwd: process.cwd(), environment: {} });
+    transport.sessionId = loaded.sessionId;
+    const restored = new CursorSession(transport, loaded, () => {}, false);
+    expect(restored.initialState.effectiveModel).toEqual(cursorModelRef("composer-2.5[fast=true]"));
+    expect(cursorCatalog(loaded).models.map((model) => model.label)).toEqual([
+      "Auto",
+      "composer-2.5",
+    ]);
   });
   it("caches failed inspection and retries only on explicit refresh or expiry", async () => {
     const open = vi
       .spyOn(CursorTransport.prototype, "open")
       .mockRejectedValue(new Error("not logged in"));
     vi.spyOn(CursorTransport.prototype, "close").mockResolvedValue();
+    vi.spyOn(CursorTransport.prototype, "availableModels").mockResolvedValue([]);
     const adapter = new CursorAdapter();
     const first = await adapter.inspect();
     expect(harnessInspectionSchema.safeParse(first).success).toBe(true);
@@ -183,6 +281,117 @@ describe("Cursor native configuration", () => {
 });
 
 describe("Cursor turn lifecycle", () => {
+  it.each([false, true])(
+    "accepts submission before configuration settles; prevents prompt on failure=%s",
+    async (fail) => {
+      const nextModel = "model[effort=low]";
+      const initial = structuredClone(info);
+      initial.configOptions[0]?.options.push({ value: nextModel, name: "Low" });
+      const f = session(initial),
+        gate = Promise.withResolvers<{ configOptions: typeof info.configOptions }>();
+      vi.spyOn(f.transport, "configure").mockReturnValue(gate.promise);
+      const prompt = vi.spyOn(f.transport, "prompt");
+      expect((await f.session.execute({ ...start, model: cursorModelRef(nextModel) })).ok).toBe(
+        true,
+      );
+      expect(prompt).not.toHaveBeenCalled();
+      if (fail) gate.reject(new Error("native config failed"));
+      else
+        gate.resolve({
+          configOptions: [
+            {
+              id: "model",
+              name: "Model",
+              type: "select",
+              currentValue: nextModel,
+              options: [{ value: nextModel, name: "Low" }],
+            },
+          ],
+        });
+      await vi.waitFor(() =>
+        expect(f.output.some((x) => x.kind === "event" && x.event.type === "turn.completed")).toBe(
+          true,
+        ),
+      );
+      expect(prompt).toHaveBeenCalledTimes(fail ? 0 : 1);
+      expect(f.output).toContainEqual(
+        expect.objectContaining({
+          event: expect.objectContaining({
+            type: "turn.completed",
+            outcome: expect.objectContaining({ status: fail ? "failed" : "succeeded" }),
+          }),
+        }),
+      );
+      await f.session.close();
+      await f.done;
+    },
+  );
+  it("reconnects the same native session only when approval changes, before prompting", async () => {
+    const f = session();
+    const opened: Array<{ id: string | undefined; force: boolean | undefined }> = [];
+    vi.spyOn(CursorTransport.prototype, "open").mockImplementation(async function (
+      this: CursorTransport,
+      id?: string,
+    ) {
+      opened.push({ id, force: this.options.force });
+      this.sessionId = id ?? info.sessionId;
+      return structuredClone(info);
+    });
+    vi.spyOn(CursorTransport.prototype, "close").mockResolvedValue();
+    vi.spyOn(CursorTransport.prototype, "prompt").mockImplementation(async (text) => {
+      native.turns.push({ id: randomUUID(), text });
+      return { stopReason: "end_turn" };
+    });
+    for (const [index, permission] of ["agent-auto", "agent-auto", "agent"].entries()) {
+      const id = hostTurnIdSchema.parse(`approval-${index}`);
+      expect(
+        (
+          await f.session.execute({
+            ...start,
+            turnId: id,
+            permissionModeId: harnessPermissionModeIdSchema.parse(permission),
+          })
+        ).ok,
+      ).toBe(true);
+      await vi.waitFor(() =>
+        expect(
+          f.output.some(
+            (x) => x.kind === "event" && x.event.type === "turn.completed" && x.event.turnId === id,
+          ),
+        ).toBe(true),
+      );
+      expect(f.session.initialState.effectivePermissionModeId).toBe(permission);
+    }
+    expect(opened).toEqual([
+      { id: info.sessionId, force: true },
+      { id: info.sessionId, force: false },
+    ]);
+    await f.session.close();
+    await f.done;
+  });
+  it("does not prompt if changing native approval fails to reconnect", async () => {
+    const f = session(),
+      prompt = vi.spyOn(CursorTransport.prototype, "prompt");
+    vi.spyOn(CursorTransport.prototype, "open").mockRejectedValue(new Error("reconnect failed"));
+    vi.spyOn(CursorTransport.prototype, "close").mockResolvedValue();
+    expect(
+      (
+        await f.session.execute({
+          ...start,
+          permissionModeId: harnessPermissionModeIdSchema.parse("agent-auto"),
+        })
+      ).ok,
+    ).toBe(true);
+    await vi.waitFor(() =>
+      expect(f.output.some((x) => x.kind === "event" && x.event.type === "turn.completed")).toBe(
+        true,
+      ),
+    );
+    expect(prompt).not.toHaveBeenCalled();
+    expect(f.session.initialState.effectivePermissionModeId).toBe("agent");
+    await f.session.close();
+    await f.done;
+  });
   it("faults and closes a dead ACP session instead of accepting further turns", async () => {
     const f = session();
     f.transport.action = async () => {
@@ -376,5 +585,72 @@ describe("Cursor replay identity", () => {
       cursorSnapshot(info.sessionId, [{ ...identity, text: "other" }], replay),
     ).toThrow();
     expect(() => cursorSnapshot("other", [identity], replay)).toThrow();
+  });
+});
+
+describe("Cursor native commands and unattended policy", () => {
+  it("allows advertised native command expansion without weakening normal turn identity", async () => {
+    const f = session();
+    f.transport.commandCatalog = {
+      commands: [
+        {
+          id: harnessCommandDescriptorSchema.shape.id.parse("cursor.verify"),
+          invocation: "/verify",
+          label: "verify",
+          argumentMode: "text",
+        },
+      ],
+    };
+    f.transport.action = async () => {
+      native.turns.push({ id: "native-expanded", text: "Native command expansion" });
+      return { stopReason: "end_turn" };
+    };
+    expect(
+      (await f.session.execute({ ...start, input: [{ type: "text", text: "/verify" }] })).ok,
+    ).toBe(true);
+    await vi.waitFor(() =>
+      expect(f.output).toContainEqual(
+        expect.objectContaining({
+          kind: "event",
+          event: expect.objectContaining({
+            type: "turn.completed",
+            outcome: { status: "succeeded" },
+          }),
+        }),
+      ),
+    );
+    expect(
+      (
+        await f.session.commands.execute({
+          commandId: harnessCommandDescriptorSchema.shape.id.parse("cursor.unknown"),
+          turnId: hostTurnIdSchema.parse("unknown"),
+        })
+      ).ok,
+    ).toBe(false);
+    await f.session.close();
+    await f.done;
+  });
+  it("maps unattended delegation to the native force startup option", async () => {
+    let force: boolean | undefined;
+    vi.spyOn(CursorTransport.prototype, "open").mockImplementation(async function (
+      this: CursorTransport,
+    ) {
+      force = this.options.force;
+      this.sessionId = info.sessionId;
+      return info;
+    });
+    vi.spyOn(CursorTransport.prototype, "close").mockResolvedValue();
+    const adapter = new CursorAdapter();
+    try {
+      const result = await adapter.open({
+        kind: "create",
+        cwd: process.cwd(),
+        executionPolicy: "unattended-full-access",
+      });
+      expect(result.ok).toBe(true);
+      expect(force).toBe(true);
+    } finally {
+      await adapter.close();
+    }
   });
 });
