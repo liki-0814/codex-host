@@ -6,6 +6,7 @@ import {
   piFastValue,
   withPiFast,
 } from "./pi-fast-extension.js";
+import { fetchPiAccount } from "./account-balance.js";
 import {
   installedPiPermissionExtension,
   managePiPermissionExtension,
@@ -1952,6 +1953,11 @@ class PiHarnessSession implements HarnessSession {
 
 export class PiAdapter implements HarnessAdapter {
   readonly #environment: NodeJS.ProcessEnv;
+  /** Pi itself holds no Account; this reports the balance of a configured provider. */
+  async inspectAccount() {
+    if (this.#closePromise) return null;
+    return fetchPiAccount({ environment: this.#environment });
+  }
   async extension(id: string, action: "inspect" | "install") {
     if (id !== "permissions" && id !== "codex-fast") throw new Error("Unknown Pi extension");
     let available = true;
@@ -2082,9 +2088,11 @@ export class PiAdapter implements HarnessAdapter {
       };
     }
     const cwd = input.cwd ?? process.cwd();
-    const inFlight = this.#inspectionInFlight.get(cwd);
-    if (inFlight) return inFlight;
+    // An explicit refresh must not be answered by an inspection that started
+    // before the user asked, or by the cache it is about to replace.
     if (!input.refresh) {
+      const inFlight = this.#inspectionInFlight.get(cwd);
+      if (inFlight) return inFlight;
       const cached = this.#inspectionCache.get(cwd);
       if (cached) return cached;
     }

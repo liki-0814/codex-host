@@ -18,6 +18,9 @@ import Info from "lucide/dist/esm/icons/info.mjs";
 import Languages from "lucide/dist/esm/icons/languages.mjs";
 import Network from "lucide/dist/esm/icons/network.mjs";
 import PlugZap from "lucide/dist/esm/icons/plug-zap.mjs";
+import Puzzle from "lucide/dist/esm/icons/puzzle.mjs";
+import Link from "lucide/dist/esm/icons/link.mjs";
+import Unlink from "lucide/dist/esm/icons/unlink.mjs";
 import RefreshCw from "lucide/dist/esm/icons/refresh-cw.mjs";
 import RotateCcw from "lucide/dist/esm/icons/rotate-ccw.mjs";
 import Route from "lucide/dist/esm/icons/route.mjs";
@@ -70,6 +73,9 @@ export const RENDERER_SETTINGS_ICON_NAMES = [
   "search",
   "help",
   "ellipsis",
+  "skills",
+  "link",
+  "unlink",
 ] as const;
 
 export type RendererSettingsIconName = (typeof RENDERER_SETTINGS_ICON_NAMES)[number];
@@ -109,6 +115,9 @@ const iconNodes = {
   search: Search,
   help: CircleHelp,
   ellipsis: Ellipsis,
+  skills: Puzzle,
+  link: Link,
+  unlink: Unlink,
 } satisfies Record<RendererSettingsIconName, IconNode>;
 
 export function isRendererSettingsIconName(value: string): value is RendererSettingsIconName {

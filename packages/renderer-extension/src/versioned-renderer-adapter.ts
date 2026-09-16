@@ -28,6 +28,7 @@ import type { RendererAgent } from "./agent-selection-state.js";
 import { installRendererForkControl } from "./renderer-fork-control.js";
 import { installRendererExternalSteering } from "./renderer-external-steering.js";
 import { installRendererExternalQueue } from "./renderer-external-queue.js";
+import { installRendererDelegationOrder } from "./renderer-delegation-order.js";
 import {
   createRendererModelClient,
   createThreadUsageSubscriptionRelay,
@@ -1065,6 +1066,8 @@ export function installCurrentRendererAdapter(
       // A new connection must not inherit unsupported-method observations.
       // Turn controls belong to the manager, so do not install duplicate hooks.
       if (!cached) {
+        const delegationCleanup = installRendererDelegationOrder(target);
+        if (delegationCleanup) turnControlCleanups.add(delegationCleanup);
         const queueCleanup = installRendererExternalQueue(target);
         if (queueCleanup) turnControlCleanups.add(queueCleanup);
         const steeringCleanup = installRendererExternalSteering(

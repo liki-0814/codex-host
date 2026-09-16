@@ -2410,6 +2410,11 @@ describe("AppServerHost HarnessAdapter projection", () => {
     });
     await answerOfficialParentCwd(fixture);
     const started = await starting;
+    await expect(
+      fixture.collector.waitFor((message) => method(message, "codexhost/delegation/created")),
+    ).resolves.toMatchObject({
+      params: { threadId: started.threadId, cwd: "/synthetic" },
+    });
     const session = fixture.adapter.sessions[0];
     if (!session) throw new Error("Delegated Session was not opened");
     await expect(
@@ -2923,6 +2928,13 @@ describe("AppServerHost HarnessAdapter projection", () => {
     await answerOfficialParentCwd(fixture);
     await expect(duplicate).resolves.toMatchObject({ threadId: "native-child" });
     expect(fixture.official.stdin.readableLength).toBe(0);
+    expect(
+      fixture.collector.messages.filter((message) =>
+        method(message, "codexhost/delegation/created"),
+      ),
+    ).toEqual([
+      expect.objectContaining({ params: { threadId: "native-child", cwd: "/synthetic" } }),
+    ]);
 
     const implicitPending = delegationApi.start({
       harnessId: "codex",
@@ -4429,6 +4441,43 @@ describe("AppServerHost HarnessAdapter projection", () => {
       },
     });
     await fixture.collector.waitFor((message) => turnEvent(message, "turn/completed", turnId));
+    await stopFixture(fixture);
+  });
+
+  it("routes version checks and explicit updates only to the selected adapter", async () => {
+    const fixture = createFixture();
+    const state = {
+      currentVersion: "1.0.0",
+      latestVersion: "1.1.0",
+      updateAvailable: true,
+      canUpdate: true,
+    };
+    const installation = vi.fn(async () => state);
+    Object.assign(fixture.adapter, { installation });
+    for (const [id, action] of [
+      [1, "check"],
+      [2, "update"],
+    ] as const) {
+      writeRequest(fixture.desktopInput, {
+        id,
+        method: "codexhost/harness/installation",
+        params: { harnessId: "pi", action },
+      });
+      await expect(
+        fixture.collector.waitFor((message) => requestId(message, id)),
+      ).resolves.toMatchObject({ result: state });
+      expect(installation).toHaveBeenLastCalledWith(action);
+    }
+    writeRequest(fixture.desktopInput, {
+      id: 3,
+      method: "codexhost/harness/installation",
+      params: { harnessId: "pi", action: "update", command: "arbitrary" },
+    });
+    await expect(
+      fixture.collector.waitFor((message) => requestId(message, 3)),
+    ).resolves.toMatchObject({ error: { code: -32602 } });
+    expect(installation).toHaveBeenCalledTimes(2);
+    expect(fixture.adapter.sessions).toHaveLength(0);
     await stopFixture(fixture);
   });
 

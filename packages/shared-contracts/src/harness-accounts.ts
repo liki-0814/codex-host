@@ -2,15 +2,36 @@ import { z } from "zod";
 import { harnessIdSchema } from "./ids.js";
 import { accountCreditsSnapshotSchema } from "./thread-usage.js";
 
+/**
+ * Remaining prepaid funds on a pay-as-you-go Account. This is not a quota:
+ * there is no allowance, no consumed share and no reset, so it cannot be
+ * expressed as `credits` without inventing a percentage.
+ */
+export const accountBalanceSnapshotSchema = z
+  .object({
+    amount: z.number().finite().nonnegative(),
+    /** ISO 4217 code as reported by the provider, for example `CNY`. */
+    currency: z.string().trim().min(1).max(8),
+    /** Native label when the Harness exposes several billing sources. */
+    label: z.string().trim().min(1).max(128).optional(),
+  })
+  .strict();
+export type AccountBalanceSnapshot = z.infer<typeof accountBalanceSnapshotSchema>;
+
 /** Read-only telemetry for the Harness's current native authentication, never a login record. */
 export const harnessAccountSnapshotSchema = z
   .object({
     email: z.string().trim().min(1).max(320).optional(),
     label: z.string().trim().min(1).max(256).optional(),
     plan: z.string().trim().min(1).max(128).optional(),
-    credits: accountCreditsSnapshotSchema,
+    /** Omitted by Accounts billed from a balance rather than an allowance. */
+    credits: accountCreditsSnapshotSchema.optional(),
+    balance: accountBalanceSnapshotSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine(({ credits, balance }) => credits !== undefined || balance !== undefined, {
+    message: "Account must report either credits or a balance",
+  });
 export type HarnessAccountSnapshot = z.infer<typeof harnessAccountSnapshotSchema>;
 
 const harnessAccountIdentityShape = {

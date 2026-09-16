@@ -1,3 +1,5 @@
+import { createHarnessInstallation } from "./harness-installation.js";
+import { createRendererSettingsIcon } from "./icons.js";
 import { createPiPermissionSetup, PI_EXTENSION_CHANGED } from "./pi-permission-setup.js";
 import { harnessIdSchema, type HarnessModelCatalog } from "@codexhost/shared-contracts";
 import type { RendererModelClient } from "../renderer-model-client.js";
@@ -10,7 +12,10 @@ import {
 import type { RendererSettingsPageDefinition, RendererSettingsPageMountContext } from "./core.js";
 import type { RendererSettingsMessages } from "./localization.js";
 
-export type RendererModelsClient = Pick<RendererModelClient, "inspectHarness" | "extension">;
+export type RendererModelsClient = Pick<
+  RendererModelClient,
+  "inspectHarness" | "extension" | "installation"
+>;
 const HARNESSES = [
   ["pi", "Pi"],
   ["qoder", "Qoder"],
@@ -38,8 +43,8 @@ export function createModelsSettingsPage(
       const description = document.createElement("p");
       description.className = "settings-page-description";
       description.textContent = zh
-        ? "选择在模型菜单中显示的模型。仅影响 Codex Host，不更改原生配置或当前会话。"
-        : "Choose which models appear in the picker. Only affects Codex Host, not native settings or the current conversation.";
+        ? "选择模型菜单中显示的模型，或检查并更新 Harness。模型显示设置仅影响 Codex Host，不更改当前会话。"
+        : "Choose visible models, or check and update Harnesses. Model visibility only affects Codex Host, not the current conversation.";
       const tabs = document.createElement("div");
       tabs.className = "settings-model-tabs";
       const search = document.createElement("input");
@@ -56,9 +61,18 @@ export function createModelsSettingsPage(
       hideAll.type = "button";
       hideAll.className = restore.className;
       hideAll.textContent = zh ? "全部隐藏" : "Hide all";
+      // Harness Model catalogs are read once and cached. A Model added natively
+      // is only picked up when the user asks for a fresh read.
+      const reload = document.createElement("button");
+      reload.type = "button";
+      reload.className = restore.className;
+      reload.append(
+        createRendererSettingsIcon("refresh", 14),
+        zh ? "重新识别模型" : "Reload models",
+      );
       const toolbar = document.createElement("div");
       toolbar.className = "settings-model-toolbar";
-      toolbar.append(search, count, hideAll, restore);
+      toolbar.append(search, count, reload, hideAll, restore);
       const status = document.createElement("p");
       status.className = "settings-model-status";
       status.setAttribute("role", "status");
@@ -75,6 +89,7 @@ export function createModelsSettingsPage(
         "codex-fast",
       );
       context.content.insertBefore(fastSetup, toolbar);
+      const installations = new Map<string, HTMLElement>();
       let harness: string = "pi";
       let catalog: HarnessModelCatalog | undefined;
       const cache = new Map<string, HarnessModelCatalog>();
@@ -100,7 +115,16 @@ export function createModelsSettingsPage(
         restore.disabled = !hidden.size;
         hideAll.disabled = shown === 0;
         const query = search.value.trim().toLowerCase();
-        const matches = models.filter((m) => m.label.toLowerCase().includes(query));
+        // Visible Models lead, each group keeping the Harness catalog order.
+        // The list is not otherwise reordered: the catalog order is the
+        // Harness's own, and this page does not own a ranking of its own.
+        const matches = models
+          .filter((m) => m.label.toLowerCase().includes(query))
+          .sort(
+            (left, right) =>
+              Number(hidden.has(modelVisibilityId(left.ref))) -
+              Number(hidden.has(modelVisibilityId(right.ref))),
+          );
         if (catalog)
           status.textContent = !models.length
             ? zh
@@ -144,37 +168,70 @@ export function createModelsSettingsPage(
       };
       const select = (id: string): void => {
         harness = id;
+        if (!installations.has(id)) {
+          const label = HARNESSES.find(([key]) => key === id)?.[1] ?? id;
+          const panel = createHarnessInstallation(
+            document,
+            context.signal,
+            getClient,
+            id,
+            label,
+            zh,
+          );
+          installations.set(id, panel);
+          context.content.insertBefore(panel, permissionSetup);
+        }
+        for (const [key, panel] of installations) panel.hidden = key !== id;
         permissionSetup.style.display = fastSetup.style.display = id === "pi" ? "" : "none";
         search.value = "";
         catalog = cache.get(id);
         for (const [key, button] of buttons)
           button.setAttribute("aria-pressed", String(key === id));
         render();
+        load(id);
+      };
+      const load = (id: string, refresh = false): void => {
+        if (refresh) {
+          cache.delete(id);
+          catalog = undefined;
+          reload.disabled = true;
+        }
         // runLatest also cancels stale results when a cached tab is selected.
         void context.runLatest(
           async () => {
             if (catalog) return catalog;
             const client = getClient();
             if (!client) throw new Error(messages.runtimeCapabilityNotInstalled);
-            status.textContent = zh ? "正在加载模型…" : "Loading models…";
+            status.textContent = refresh
+              ? zh
+                ? "正在重新识别模型…"
+                : "Reloading models…"
+              : zh
+                ? "正在加载模型…"
+                : "Loading models…";
             const inspection = await client.inspectHarness({
               harnessId: harnessIdSchema.parse(id),
+              // Bypass the Host catalog cache so a natively added Model appears.
+              ...(refresh ? { refresh: true } : {}),
             });
             if (inspection.status !== "ready") throw new Error(inspection.error.message);
             return inspection.catalog;
           },
           {
             success(value) {
+              reload.disabled = false;
               cache.set(id, value);
               catalog = value;
               render();
             },
             failure(error) {
+              reload.disabled = false;
               status.textContent = error instanceof Error ? error.message : messages.notAvailable;
             },
           },
         );
       };
+      reload.addEventListener("click", () => load(harness, true));
       for (const [id, label] of HARNESSES) {
         const button = document.createElement("button");
         button.type = "button";

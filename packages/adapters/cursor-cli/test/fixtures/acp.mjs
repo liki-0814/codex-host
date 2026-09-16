@@ -2,6 +2,7 @@ import readline from "node:readline";
 const scenario = process.argv[2];
 const sessionId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 let promptId;
+let promptSession = sessionId;
 const send = (value) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...value }) + "\n");
 const lines = readline.createInterface({ input: process.stdin });
 lines.on("line", (line) => {
@@ -13,7 +14,18 @@ lines.on("line", (line) => {
       result: { protocolVersion: 1, agentCapabilities: { loadSession: true }, authMethods: [] },
     });
   } else if (message.method === "authenticate") send({ id: message.id, result: {} });
-  else if (message.method === "session/new" || message.method === "session/load") {
+  else if (message.method === "session/load") {
+    // Echo the requested identity so one process can hold several Sessions.
+    const loaded = message.params?.sessionId ?? sessionId;
+    send({ id: message.id, result: { sessionId: loaded, configOptions: [] } });
+    send({
+      method: "session/update",
+      params: {
+        sessionId: loaded,
+        update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: loaded } },
+      },
+    });
+  } else if (message.method === "session/new") {
     send({ id: message.id, result: { sessionId, configOptions: [] } });
   } else if (message.method === "cursor/list_available_models") {
     send({ id: message.id, result: { models: [] } });
@@ -24,11 +36,13 @@ lines.on("line", (line) => {
       process.exit(7);
     }
     promptId = message.id;
+    // Answer as the Session that prompted, so routing can be exercised.
+    promptSession = message.params?.sessionId ?? sessionId;
     send({
       id: "permission",
       method: "session/request_permission",
       params: {
-        sessionId,
+        sessionId: promptSession,
         toolCall: { toolCallId: "shell-1", title: "Synthetic shell" },
         options: [{ optionId: "deny", name: "Deny", kind: "reject_once" }],
       },

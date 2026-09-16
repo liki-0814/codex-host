@@ -519,7 +519,11 @@ export class ExternalThreadRuntime {
       ...(restoredSelection?.thinkingOptionId
         ? { thinkingOptionId: restoredSelection.thinkingOptionId }
         : {}),
-      ...(harnessId === "grok" && restoredSelection?.permissionModeId
+      // Harnesses whose Permission Mode is a process-level argument must be
+      // opened with the restored mode. Applying it afterwards would replace the
+      // transport that was just opened, loading the Session a second time.
+      ...((harnessId === "grok" || harnessId === "cursor-cli") &&
+      restoredSelection?.permissionModeId
         ? { permissionModeId: restoredSelection.permissionModeId }
         : {}),
     });

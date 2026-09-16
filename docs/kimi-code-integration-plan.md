@@ -1,10 +1,10 @@
 # Kimi Code 接入与验收
 
-2026-09-16：已实现插件、预装发行和 Desktop 接入；本机验证版本为 Kimi Code 0.42.0。
+2026-09-16：已实现插件、预装发行和 Desktop 接入；本机验证版本为 Kimi Code 0.42.0 与 0.43.1。0.43.1 上已核验 `/meta`、`/models`、`/config`、`/sessions` 的响应结构与既有 schema 一致；WebSocket 事件流与会话生命周期接口尚未在该版本上重新核验。
 
 ## 协议与边界
 
-使用新版 Kimi Code 原生 Server REST API + WebSocket，支持 0.42.x。旧 Python kimi-cli 不作为兼容依赖。原生实验接口升级后需要重新核验版本与响应结构。
+使用新版 Kimi Code 原生 Server REST API + WebSocket。协议世代以服务端 `/meta` 自报的 `backend` 为准（当前为 `v2`），版本号前缀仅用于该字段出现之前的构建。旧 Python kimi-cli 不作为兼容依赖。原生实验接口升级后需要重新核验响应结构。
 
 每个活动会话运行独立的回环服务，传递该 Thread 的完整环境；只读模型和账户发现使用独立服务。仅管理 Adapter 自己启动的进程。鉴权令牌保留在后端，不进入 Renderer 或日志；不改写用户全局配置。
 

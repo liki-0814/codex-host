@@ -244,6 +244,30 @@ export function renderAccountRows(
   return [row, ...continuationRows, detailsRow];
 }
 
+function createAccountBalanceCell(
+  document: Document,
+  messages: RendererSettingsMessages,
+  balance: HarnessAccountListResult["accounts"][number]["balance"],
+): ReturnType<typeof renderAccountUsage> {
+  const cell = document.createElement("td");
+  cell.className = "settings-account-usage-cell";
+  const root = document.createElement("div");
+  root.className = "settings-account-balance";
+  if (balance) {
+    const amount = document.createElement("strong");
+    // Report the provider's own currency and amount; never convert or estimate.
+    amount.textContent = `${balance.currency} ${balance.amount.toFixed(2)}`;
+    const caption = document.createElement("span");
+    caption.className = "settings-account-balance__caption";
+    caption.textContent = balance.label
+      ? `${balance.label} · ${messages.accountBalanceRemaining}`
+      : messages.accountBalanceRemaining;
+    root.append(amount, caption);
+  }
+  cell.append(root);
+  return { cells: [cell], continuationCells: [], additional: null };
+}
+
 export function renderHarnessAccountRows(
   document: Document,
   account: HarnessAccountListResult["accounts"][number],
@@ -271,14 +295,19 @@ export function renderHarnessAccountRows(
       mark: logo,
     }),
   );
-  const usage = renderAccountUsage(
-    document,
-    { status: "ready", credits: account.credits, freshness: "live", observedAt: null },
-    messages,
-    display,
-    () => undefined,
-    account.harnessId === "grok" ? "weekly-only" : "all",
-  );
+  // An Account billed from a prepaid balance has no allowance to chart, so the
+  // remaining funds take the place of the usage meter instead of being forced
+  // into one.
+  const usage = account.credits
+    ? renderAccountUsage(
+        document,
+        { status: "ready", credits: account.credits, freshness: "live", observedAt: null },
+        messages,
+        display,
+        () => undefined,
+        account.harnessId === "grok" ? "weekly-only" : "all",
+      )
+    : createAccountBalanceCell(document, messages, account.balance);
   if (usage.additional) personCell.append(usage.additional);
   const managementCell = document.createElement("td");
   managementCell.className = "settings-account-management-cell";

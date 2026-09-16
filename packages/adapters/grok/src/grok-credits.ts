@@ -204,7 +204,8 @@ export async function fetchGrokCredits(
   input: FetchGrokCreditsInput = {},
 ): Promise<GrokCreditsSnapshot | null> {
   const account = await fetchGrokAccount(input);
-  if (!account) return null;
+  // Grok bills from an allowance; a balance-only Account has nothing to report here.
+  if (!account?.credits) return null;
   const { credits } = account;
   return {
     usedPercent: credits.usedPercent,

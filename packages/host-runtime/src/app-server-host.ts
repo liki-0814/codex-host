@@ -1,4 +1,17 @@
 import {
+  HARNESS_INSTALLATION_METHOD,
+  harnessInstallationParamsSchema,
+  harnessInstallationStateSchema,
+} from "@codexhost/shared-contracts";
+import {
+  HARNESS_SKILLS_INSPECT_METHOD,
+  HARNESS_SKILLS_LINK_METHOD,
+  harnessSkillLinkParamsSchema,
+} from "@codexhost/shared-contracts";
+import { applySkillLink, readSkillCatalog } from "./harness-skills.js";
+import {
+  DELEGATION_CREATED_METHOD,
+  delegationCreatedSchema,
   harnessExtensionParamsSchema,
   harnessExtensionStateSchema,
 } from "@codexhost/shared-contracts";
@@ -619,7 +632,10 @@ export class AppServerHost {
       registerExternalThread: (input) => this.#registerExternalThread(input),
       startExternalTurn: (thread, text, turnId) =>
         this.#startDelegatedExternalTurn(thread, text, turnId),
-      notifyThreadStarted: (thread) => this.#notifyExternalThreadStarted(thread),
+      notifyThreadStarted: async (thread) => {
+        await this.#notifyExternalThreadStarted(thread);
+        await this.#notifyDelegationCreated(thread.id, thread.cwd);
+      },
       inspectOfficial: (input) => this.#inspectOfficialDelegationTarget(input),
       readOfficial: (input) => this.#readOfficialDelegationThread(input),
       sendOfficial: (input) => this.#sendOfficialDelegationThread(input),
@@ -857,6 +873,50 @@ export class AppServerHost {
         request.method === "codexhost/account/refresh"
       ) {
         this.#dispatchDesktopRequest(() => this.#handleCodexAccountRequest(request));
+        continue;
+      }
+      if (request.method === HARNESS_INSTALLATION_METHOD) {
+        this.#dispatchDesktopRequest(async () => {
+          const params = harnessInstallationParamsSchema.safeParse(request.params);
+          if (!params.success) {
+            await this.#writer.json(
+              rpcError(request, -32602, "Invalid Harness installation request"),
+            );
+            return;
+          }
+          const adapter = this.#externalAdapters.get(params.data.harnessId);
+          if (!adapter?.installation) {
+            await this.#writer.json(
+              rpcError(request, -32077, "Harness updates are unavailable on this Host"),
+            );
+            return;
+          }
+          try {
+            const result = harnessInstallationStateSchema.parse(
+              await adapter.installation(params.data.action),
+            );
+            await this.#writer.json(
+              rpcEnvelope(request, {
+                result: {
+                  currentVersion: result.currentVersion,
+                  latestVersion: result.latestVersion,
+                  updateAvailable: result.updateAvailable,
+                  canUpdate: result.canUpdate,
+                  ...(result.message !== undefined ? { message: result.message } : {}),
+                },
+              }),
+            );
+          } catch (error) {
+            await this.#writer.json(rpcError(request, -32077, errorMessage(error)));
+          }
+        });
+        continue;
+      }
+      if (
+        request.method === HARNESS_SKILLS_INSPECT_METHOD ||
+        request.method === HARNESS_SKILLS_LINK_METHOD
+      ) {
+        this.#dispatchDesktopRequest(() => this.#handleSkillRequest(request));
         continue;
       }
       if (request.method === "codexhost/harness/extension") {
@@ -1471,6 +1531,18 @@ export class AppServerHost {
     return this.#accountControl.refresh?.() ?? this.#accountControl.snapshot();
   }
 
+  async #handleSkillRequest(request: JsonRpcRequest): Promise<void> {
+    try {
+      const catalog =
+        request.method === HARNESS_SKILLS_INSPECT_METHOD
+          ? await readSkillCatalog()
+          : await applySkillLink(harnessSkillLinkParamsSchema.parse(requestObject(request)));
+      await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(catalog) }));
+    } catch (error) {
+      await this.#writer.json(rpcError(request, -32078, errorMessage(error)));
+    }
+  }
+
   async #handleCodexAccountRequest(request: JsonRpcRequest): Promise<void> {
     try {
       if (request.method === "codexhost/account/usage/inspect") {
@@ -1644,6 +1716,18 @@ export class AppServerHost {
     };
   }
 
+  async #notifyDelegationCreated(threadId: unknown, cwd: unknown): Promise<void> {
+    try {
+      await this.#writer.json({
+        method: DELEGATION_CREATED_METHOD,
+        params: delegationCreatedSchema.parse({ threadId, cwd }),
+      });
+    } catch (error) {
+      // Sidebar registration must not roll back an already-created task.
+      this.#diagnose(error);
+    }
+  }
+
   async #startOfficialDelegation(
     input: DelegationStartInput & { parentThreadId: string; cwd: string },
   ): Promise<DelegationStartResult> {
@@ -1782,6 +1866,7 @@ export class AppServerHost {
         ...(input.requestId ? { requestId: input.requestId } : {}),
         taskDigest: digest,
       });
+      await this.#notifyDelegationCreated(threadId, input.cwd);
       return {
         delegationId,
         threadId,

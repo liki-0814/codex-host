@@ -14,7 +14,7 @@ import {
   nativeModelsSchema,
 } from "../src/models.js";
 import { projectTurn, turnSchema } from "../src/projection.js";
-import { KimiServer } from "../src/server.js";
+import { KimiServer, isSupportedKimiServer } from "../src/server.js";
 import { KimiSession } from "../src/session.js";
 import { readFileChanges } from "../src/file-history.js";
 import type { HarnessOutput } from "@codexhost/harness-adapter";
@@ -244,5 +244,23 @@ describe("Kimi Session lifecycle", () => {
     expect(f.calls.some((p) => p.endsWith("/prompts"))).toBe(false);
     await f.session.close();
     await f.collected;
+  });
+});
+
+describe("Kimi Server protocol gate", () => {
+  it("accepts the generation the Adapter speaks, reported by the server itself", () => {
+    expect(isSupportedKimiServer({ server_version: "0.43.1", backend: "v2" })).toBe(true);
+    expect(isSupportedKimiServer({ server_version: "0.44.0", backend: "v2" })).toBe(true);
+  });
+
+  it("still accepts builds from before the backend marker existed", () => {
+    expect(isSupportedKimiServer({ server_version: "0.42.7" })).toBe(true);
+    expect(isSupportedKimiServer({ server_version: "0.43.1" })).toBe(true);
+  });
+
+  it("refuses a server that reports neither a known version nor the generation", () => {
+    expect(isSupportedKimiServer({ server_version: "0.41.0" })).toBe(false);
+    expect(isSupportedKimiServer({ server_version: "1.2.3" })).toBe(false);
+    expect(isSupportedKimiServer({ server_version: "0.44.0", backend: "v1" })).toBe(false);
   });
 });

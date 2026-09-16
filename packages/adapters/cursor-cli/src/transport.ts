@@ -1,18 +1,19 @@
 import { cursorCommands } from "./commands.js";
 import type { HarnessCommandCatalog } from "@codexhost/shared-contracts";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { Readable, Writable } from "node:stream";
-import {
-  ClientSideConnection,
-  ndJsonStream,
-  type NewSessionResponse,
-  type LoadSessionResponse,
-  type SessionNotification,
-  type RequestPermissionRequest,
-  type RequestPermissionResponse,
+import type {
+  NewSessionResponse,
+  LoadSessionResponse,
+  SessionNotification,
+  RequestPermissionRequest,
+  RequestPermissionResponse,
 } from "@agentclientprotocol/sdk";
 import { parseCursorAvailableModels } from "./available-models.js";
-import { cursorInvocation } from "./command.js";
+import {
+  CursorConnectionPool,
+  CursorRequestTimeoutError,
+  type CursorConnection,
+  type CursorSessionHandlers,
+} from "./connection.js";
 
 export interface CursorTransportOptions {
   cwd: string;
@@ -20,6 +21,13 @@ export interface CursorTransportOptions {
   command?: string;
   force?: boolean;
   timeoutMs?: number;
+  /**
+   * Shared CLI connections. Sessions that share a working directory and
+   * execution mode reuse one process, so only the first one pays for spawning
+   * and authenticating. Without a pool each transport gets a private one,
+   * which is the previous one-process-per-Session behavior.
+   */
+  pool?: CursorConnectionPool;
 }
 export type CursorAvailableModel = {
   value: string;
@@ -35,116 +43,100 @@ export interface CursorCallbacks {
   extension(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>>;
   notification?(method: string, params: Record<string, unknown>): void;
 }
+
+const CANCELLED: RequestPermissionResponse = { outcome: { outcome: "cancelled" } };
+
 export class CursorTransport {
   commandCatalog: HarnessCommandCatalog = { commands: [] };
   sessionId = "";
   replay: SessionNotification[] = [];
-  #child: ChildProcessWithoutNullStreams | undefined;
-  #connection: ClientSideConnection | undefined;
+  #connection: CursorConnection | undefined;
+  #ownPool: CursorConnectionPool | undefined;
   #callbacks: CursorCallbacks | undefined;
   #closed = false;
-  #fault: Error | undefined;
-  #rejectFault!: (error: Error) => void;
-  readonly #failed = new Promise<never>((_, reject) => {
-    this.#rejectFault = reject;
+  #rejectClosed!: (error: Error) => void;
+  readonly #closedSignal = new Promise<never>((_, reject) => {
+    this.#rejectClosed = reject;
   });
+  readonly #handlers: CursorSessionHandlers;
 
   constructor(readonly options: CursorTransportOptions) {
-    void this.#failed.catch(() => undefined);
+    void this.#closedSignal.catch(() => undefined);
+    this.#handlers = {
+      update: (value) => {
+        if (this.sessionId && value.sessionId !== this.sessionId) return;
+        const catalog = cursorCommands(value);
+        if (catalog) this.commandCatalog = catalog;
+        if (this.#callbacks) this.#callbacks.update(value);
+        else if (this.replay.length < 100_000) this.replay.push(value);
+        else throw new Error("Cursor replay exceeds the supported history limit");
+      },
+      permission: (value) =>
+        this.#callbacks && value.sessionId === this.sessionId
+          ? this.#callbacks.permission(value)
+          : Promise.resolve(CANCELLED),
+      extension: (method, params) =>
+        this.#callbacks
+          ? this.#callbacks.extension(method, params)
+          : Promise.resolve({ outcome: { outcome: "cancelled" } }),
+      notification: (method, params) => {
+        this.#callbacks?.notification?.(method, params);
+      },
+    };
   }
 
-  async #bounded<T>(work: Promise<T>, timeout = this.options.timeoutMs ?? 30_000): Promise<T> {
-    if (this.#fault) throw this.#fault;
-    let timer: ReturnType<typeof setTimeout> | undefined;
+  #require(): CursorConnection {
+    if (!this.#connection) throw new Error("Cursor session is not open");
+    return this.#connection;
+  }
+
+  async #bounded<T>(work: Promise<T>): Promise<T> {
+    if (this.#closed) throw new Error("Cursor session closed");
     try {
-      return await Promise.race([
-        work,
-        this.#failed,
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            reject(new Error("Cursor ACP request timed out"));
-            void this.close();
-          }, timeout);
-        }),
-      ]);
-    } finally {
-      clearTimeout(timer);
+      return await this.#require().bounded(work);
+    } catch (error) {
+      // A late answer to a timed-out request could still land on a later turn,
+      // so this Session stops here. The shared process keeps serving the others.
+      if (error instanceof CursorRequestTimeoutError) await this.close();
+      throw error;
     }
   }
 
   async open(sessionId?: string): Promise<CursorSessionInfo> {
     if (this.#closed || this.#connection) throw new Error("Cursor transport cannot be reopened");
-    const invocation = cursorInvocation(
-      this.options.environment,
-      this.options.command,
-      this.options.force,
-    );
-    const child = spawn(invocation.command, invocation.arguments, {
-      cwd: this.options.cwd,
-      env: this.options.environment,
-      windowsHide: true,
-      windowsVerbatimArguments: invocation.windowsVerbatimArguments,
-      stdio: "pipe",
-      ...(process.platform === "win32" ? {} : { detached: true }),
-    });
-    this.#child = child;
-    const fault = (message: string) => {
-      this.#fault = new Error(message);
-      this.#rejectFault(this.#fault);
-    };
-    child.on("error", () => fault("Cursor ACP process could not start"));
-    child.on("exit", (code) => fault(`Cursor ACP process exited (${code ?? "signal"})`));
-    child.stderr.resume(); // Native diagnostics may contain secrets; never copy them to Host events.
-    this.#connection = new ClientSideConnection(
-      () => ({
-        sessionUpdate: (value) => {
-          if (this.sessionId && value.sessionId !== this.sessionId) return;
-          const catalog = cursorCommands(value);
-          if (catalog) this.commandCatalog = catalog;
-          if (this.#callbacks) this.#callbacks.update(value);
-          else if (this.replay.length < 100_000) this.replay.push(value);
-          else throw new Error("Cursor replay exceeds the supported history limit");
-        },
-        requestPermission: (value) =>
-          this.#callbacks && value.sessionId === this.sessionId
-            ? this.#callbacks.permission(value)
-            : Promise.resolve({ outcome: { outcome: "cancelled" } }),
-        extMethod: (method, params) =>
-          this.#callbacks
-            ? this.#callbacks.extension(method, params)
-            : Promise.resolve({ outcome: { outcome: "cancelled" } }),
-        extNotification: async (method, params) => {
-          this.#callbacks?.notification?.(method, params);
-        },
-      }),
-      ndJsonStream(
-        Writable.toWeb(child.stdin),
-        Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
-      ),
-    );
+    const pool = this.options.pool ?? (this.#ownPool = new CursorConnectionPool());
+    let connection: CursorConnection;
     try {
-      const init = await this.#bounded(
-        this.#connection.initialize({
-          protocolVersion: 1,
-          clientCapabilities: { _meta: { parameterizedModelPicker: true } },
-          clientInfo: { name: "codexhost", version: "0.6.2" },
-        }),
+      connection = await pool.acquire(
+        { cwd: this.options.cwd, force: this.options.force === true },
+        this.options.environment,
+        this.options.command,
+        this.options.timeoutMs ?? 30_000,
       );
-      if (init.protocolVersion !== 1 || (sessionId && !init.agentCapabilities?.loadSession))
+    } catch (error) {
+      // A transport that never reached a connection is spent, not reusable.
+      await this.close();
+      throw error;
+    }
+    this.#connection = connection;
+    try {
+      if (sessionId && !connection.loadSessionSupported)
         throw new Error("Cursor does not support the required ACP session protocol");
-      // This reuses an existing native login. The adapter never launches login or reads credentials.
-      await this.#bounded(this.#connection.authenticate({ methodId: "cursor_login" }));
       this.sessionId = sessionId ?? "";
+      // Attach before loading so replayed history is never dropped.
+      if (sessionId) connection.attach(sessionId, this.#handlers);
       const info = sessionId
-        ? await this.#bounded(
-            this.#connection.loadSession({ sessionId, cwd: this.options.cwd, mcpServers: [] }),
+        ? await connection.bounded(
+            connection.rpc.loadSession({ sessionId, cwd: this.options.cwd, mcpServers: [] }),
           )
-        : await this.#bounded(
-            this.#connection.newSession({ cwd: this.options.cwd, mcpServers: [] }),
+        : await connection.create(this.#handlers, () =>
+            connection.bounded(
+              connection.rpc.newSession({ cwd: this.options.cwd, mcpServers: [] }),
+            ),
           );
-      if ("sessionId" in info && typeof info.sessionId === "string")
-        this.sessionId = info.sessionId;
+      if ("sessionId" in info && typeof info.sessionId === "string") this.sessionId = info.sessionId;
       if (!this.sessionId) throw new Error("Cursor returned no native session ID");
+      connection.attach(this.sessionId, this.#handlers);
       return info;
     } catch (error) {
       await this.close();
@@ -153,28 +145,36 @@ export class CursorTransport {
   }
 
   async availableModels(): Promise<CursorAvailableModel[]> {
-    if (!this.#connection) throw new Error("Cursor session is not open");
     return parseCursorAvailableModels(
-      await this.#bounded(this.#connection.extMethod("cursor/list_available_models", {})),
+      await this.#bounded(this.#require().rpc.extMethod("cursor/list_available_models", {})),
     );
   }
 
   async configure(configId: string, value: string) {
-    if (!this.#connection) throw new Error("Cursor session is not open");
     return this.#bounded(
-      this.#connection.setSessionConfigOption({ sessionId: this.sessionId, configId, value }),
+      this.#require().rpc.setSessionConfigOption({
+        sessionId: this.sessionId,
+        configId,
+        value,
+      }),
     );
   }
 
   async prompt(text: string, callbacks: CursorCallbacks) {
     if (!this.#connection || this.#closed || this.#callbacks)
       throw new Error("Cursor session is closed or busy");
+    const connection = this.#connection;
     this.#callbacks = callbacks;
     try {
-      // Native turns have no arbitrary wall-clock deadline; cancellation/close/process exit settle them.
+      // Native turns have no arbitrary wall-clock deadline; cancellation, closing
+      // this Session, or the shared process exiting settle them.
       return await Promise.race([
-        this.#connection.prompt({ sessionId: this.sessionId, prompt: [{ type: "text", text }] }),
-        this.#failed,
+        connection.rpc.prompt({
+          sessionId: this.sessionId,
+          prompt: [{ type: "text", text }],
+        }),
+        connection.failed,
+        this.#closedSignal,
       ]);
     } finally {
       this.#callbacks = undefined;
@@ -183,63 +183,22 @@ export class CursorTransport {
 
   async cancel() {
     if (this.#connection && !this.#closed)
-      await this.#bounded(this.#connection.cancel({ sessionId: this.sessionId }));
+      await this.#bounded(this.#require().rpc.cancel({ sessionId: this.sessionId }));
   }
 
+  /**
+   * Releases this Session. The CLI process belongs to the pool and survives for
+   * the next Session in the same working directory until it goes idle.
+   */
   async close() {
     if (this.#closed) return;
     this.#closed = true;
-    this.#fault = new Error("Cursor session closed");
-    this.#rejectFault(this.#fault);
-    const child = this.#child;
-    if (!child) return;
-    child.stdin.end();
-    if (child.exitCode === null && child.signalCode === null) {
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, 500);
-        child.once("exit", () => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
-    }
-    if (child.exitCode === null && child.signalCode === null) {
-      if (process.platform !== "win32" && child.pid) {
-        try {
-          process.kill(-child.pid, "SIGKILL");
-        } catch {
-          child.kill("SIGKILL");
-        }
-      } else if (child.pid) {
-        // Terminate only this owned CLI tree, including a native tool still running.
-        const killer = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
-          windowsHide: true,
-          stdio: "ignore",
-        });
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(() => {
-            killer.kill();
-            resolve();
-          }, 2_000);
-          const finish = () => {
-            clearTimeout(timer);
-            resolve();
-          };
-          killer.once("error", finish);
-          killer.once("exit", finish);
-        });
-        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-      }
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, 2_000);
-        child.once("exit", () => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
-    }
-    child.stdout.destroy();
-    child.stderr.destroy();
-    child.stdin.destroy();
+    this.#rejectClosed(new Error("Cursor session closed"));
+    this.#callbacks = undefined;
+    this.#connection?.detach(this.sessionId, this.#handlers);
+    this.#connection = undefined;
+    const own = this.#ownPool;
+    this.#ownPool = undefined;
+    if (own) await own.close();
   }
 }

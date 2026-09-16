@@ -298,15 +298,19 @@ describe("Renderer fixed Model request client", () => {
     expect(Object.keys(client).sort()).toEqual([
       "checkUpdate",
       "executeThreadCommand",
+      "extension",
       "forkThread",
       "importHarnessSession",
       "inspectCodexAccountUsage",
       "inspectHarness",
       "inspectHarnessAccount",
       "inspectHarnessCommands",
+      "inspectSkills",
       "inspectThread",
       "inspectThreadCommands",
       "inspectThreadUsage",
+      "installation",
+      "linkSkill",
       "listCodexAccounts",
       "listHarnessAccountSources",
       "listHarnessAccounts",
@@ -698,4 +702,27 @@ describe("Renderer fixed Model request client", () => {
 
     await expect(client.inspectHarness({ harnessId: piHarnessId })).rejects.toThrow();
   });
+});
+
+it("allows bounded native updater runtime and validates installation responses", async () => {
+  const state = {
+    currentVersion: "1.0.0",
+    latestVersion: "1.1.0",
+    canUpdate: true,
+    updateAvailable: true,
+  };
+  const sendRequest = vi.fn(async () => state);
+  const client = createRendererModelClient([{ sendRequest }]);
+  await expect(
+    client?.installation?.({ harnessId: piHarnessId, action: "check" }),
+  ).resolves.toEqual(state);
+  expect(sendRequest).toHaveBeenCalledWith(
+    "codexhost/harness/installation",
+    { harnessId: "pi", action: "check" },
+    { timeoutMs: 600_000 },
+  );
+  sendRequest.mockResolvedValueOnce({ ...state, currentVersion: "" });
+  await expect(
+    client?.installation?.({ harnessId: piHarnessId, action: "check" }),
+  ).rejects.toThrow();
 });

@@ -2125,3 +2125,117 @@ button {
 .settings-model-status:empty {
   margin: 0 0 12px;
 }
+
+.settings-skill-native {
+  margin: -8px 0 16px;
+  color: var(--settings-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.settings-skill-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin: 0 0 16px;
+  padding: 0 10px;
+  color: var(--settings-muted);
+  background: var(--settings-bg);
+  border: 1px solid var(--settings-border);
+  border-radius: 6px;
+}
+
+.settings-skill-search__input {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  color: var(--settings-text);
+  background: transparent;
+  border: 0;
+}
+
+.settings-skill-search:focus-within {
+  outline: 2px solid var(--settings-focus);
+  outline-offset: 2px;
+}
+
+.settings-skill-search__input:focus-visible {
+  outline: none;
+}
+
+.settings-skill-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--settings-border);
+}
+
+.settings-skill-row:last-child {
+  border-bottom: 0;
+}
+
+.settings-skill-row__copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.settings-skill-row__description {
+  overflow: hidden;
+  color: var(--settings-muted);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.settings-skill-row__targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings-skill-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--settings-muted);
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--settings-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.settings-skill-toggle.is-linked {
+  color: var(--settings-text);
+  background: var(--settings-surface);
+  border-color: var(--settings-focus);
+}
+
+.settings-skill-toggle:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.settings-skill-row.is-broken .settings-skill-row__description {
+  color: light-dark(#b42318, #f97066);
+}
+
+.settings-skill-empty,
+.settings-skill-status {
+  margin: 8px 0 0;
+  color: var(--settings-muted);
+  font-size: 12px;
+  line-height: 18px;
+}

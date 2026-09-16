@@ -262,3 +262,45 @@ snapshot. API-key and memory-store sessions do not use unrelated saved OAuth.
 Verified native schema: Cursor CLI `2026.09.10-fd3934a`. These undocumented service
 and credential-store contracts may change; failures must not invent quota or
 include credentials in Renderer diagnostics.
+
+
+## Native Harness version maintenance
+
+Settings → Models shows the installed CLI and latest version for Pi, Qoder,
+Cursor, Kimi Code and Grok. Opening a tab checks versions; the visible tab checks
+again every five minutes, with an explicit refresh button. Only an explicit Update
+click installs anything. The update button is disabled when current or unsupported.
+Failures remain visible and can be retried with a fresh check. A successful command
+is followed by version readback; an unchanged version is not reported as success.
+
+The optional `HarnessAdapter.installation` capability owns native behavior. Host
+only validates and routes `codexhost/harness/installation`; it never accepts a
+command, path, download URL or package name from Renderer. These are CLI updates,
+not Host plugin updates, and existing sessions are not restarted.
+
+- Pi: the actual installed npm package, retaining its package name and global prefix.
+  Source checkouts and unrecognized package-manager layouts require their original installer.
+- Qoder: native `update --check` and `update`.
+- Cursor: native `about --format json` and `update`, preserving its channel.
+- Grok: native `update --check --json` and `update`, preserving its channel.
+- Kimi Code: native CDN version check and its checksum-verifying manual staging worker
+  (`__update_download VERSION --manual`), gated by executable and help checks. This
+  is the native path used by Kimi 0.42's interactive updater; native startup applies
+  the staged release, then Host reads back the version. Recognized npm installations
+  use their existing package and prefix. Unknown layouts remain manual.
+
+Older plugins and brokered connections without this optional capability report it
+as unavailable. No local update is substituted for a remote installation.
+
+## New delegated Threads in manual project order
+
+After a delegation is persisted, Host emits `codexhost/delegation/created` with
+its Thread ID and cwd. Renderer uses Desktop's existing project-order registration
+helper, including its serialized persistence and cache refresh. Only newly created
+delegations participate; resuming or finding an existing delegation does not move it.
+The native project filters and Host scope select the project. Date-based ordering
+is unaffected, and existing manual order is preserved below the new Thread.
+
+The private binding is validated for Desktop asset
+`app-initial-4d7ea7f81c2d.js`. Unknown assets or ambiguous projects skip registration
+without breaking delegation; they do not fall back to writing Desktop state directly.

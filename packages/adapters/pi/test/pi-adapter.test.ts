@@ -441,6 +441,22 @@ describe("Pi HarnessAdapter Session", () => {
     await adapter.close();
   });
 
+  it("does not answer a refresh with an inspection that started before it", async () => {
+    // The user asks to re-read the catalog after adding a Model natively; a
+    // read already in flight cannot know about it.
+    const { adapter, dependencies } = fixture();
+
+    const pending = adapter.inspect({ cwd: "/synthetic" });
+    const refreshed = adapter.inspect({ cwd: "/synthetic", refresh: true });
+    await expect(Promise.all([pending, refreshed])).resolves.toEqual([
+      expect.objectContaining({ status: "ready" }),
+      expect.objectContaining({ status: "ready" }),
+    ]);
+
+    expect(dependencies.createTransport).toHaveBeenCalledTimes(2);
+    await adapter.close();
+  });
+
   it("does not translate execution policy into Pi permission options", async () => {
     const { adapter, dependencies } = fixture();
     const opened = await adapter.open({

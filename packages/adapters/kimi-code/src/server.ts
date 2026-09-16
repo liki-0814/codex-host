@@ -4,7 +4,7 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { resolveHarnessExecutable } from "@codexhost/harness-discovery";
+import { resolveKimiExecutable } from "./command.js";
 import type { HarnessError } from "@codexhost/harness-adapter";
 import { z } from "zod";
 import WebSocket from "ws";
@@ -24,6 +24,27 @@ export function kimiError(error: unknown): HarnessError {
     retryable: false,
   };
 }
+export const kimiServerMetaSchema = z.object({
+  server_version: z.string(),
+  /** Protocol generation reported by the server itself. */
+  backend: z.string().optional(),
+});
+export type KimiServerMeta = z.infer<typeof kimiServerMetaSchema>;
+
+/**
+ * The Server API generation this Adapter speaks, not a build allowlist.
+ *
+ * `backend` is Kimi's own marker for the protocol generation, so it is the
+ * durable signal; the version prefixes stay for builds that predate the field.
+ * Verified against 0.43.1: `/meta`, `/models`, `/config` and `/sessions` all
+ * still match the shapes this Adapter parses. The old Python kimi-cli reports
+ * neither, and is still refused.
+ */
+export function isSupportedKimiServer(meta: KimiServerMeta): boolean {
+  if (meta.backend === "v2") return true;
+  return /^0\.4[23]\./u.test(meta.server_version);
+}
+
 export interface KimiServerOptions {
   environment?: NodeJS.ProcessEnv;
   command?: string;
@@ -51,19 +72,12 @@ export class KimiServer {
   }
   async #launch(): Promise<void> {
     if (this.#closed) throw new KimiError("invalidState", "Kimi server is closed");
-    const resolution = resolveHarnessExecutable(
-      {
-        id: "kimi-code",
-        command: "kimi",
-        commandEnvironmentVariable: "CODEXHOST_KIMI_CODE_COMMAND",
-        installRoots: { posix: ["~/.kimi-code/bin"], windows: ["~/.kimi-code/bin"] },
-      },
-      {
-        environment: this.#environment,
-        ...(this.options.command ? { command: this.options.command } : {}),
-      },
-    );
-    if (!resolution) throw new KimiError("notInstalled", "Kimi Code executable not found");
+    let executable: string;
+    try {
+      executable = resolveKimiExecutable(this.#environment, this.options.command);
+    } catch {
+      throw new KimiError("notInstalled", "Kimi Code executable not found");
+    }
     const listener = createServer();
     await new Promise<void>((resolve, reject) => {
       listener.once("error", reject);
@@ -75,7 +89,7 @@ export class KimiServer {
     this.#port = address.port;
     await new Promise<void>((resolve) => listener.close(() => resolve()));
     this.#child = spawn(
-      resolution.executable,
+      executable,
       ["web", "--no-open", "--host", "127.0.0.1", "--port", String(this.#port)],
       {
         cwd: this.options.cwd ?? this.#environment.HOME ?? homedir(),
@@ -95,13 +109,8 @@ export class KimiServer {
         if (this.#closed || spawnError || this.#child.exitCode !== null)
           throw new KimiError("processExited", "Kimi server exited during startup");
         try {
-          const meta = await this.request(
-            "/meta",
-            z.object({ server_version: z.string() }),
-            undefined,
-            500,
-          );
-          if (!/^0\.42\./u.test(meta.server_version))
+          const meta = await this.request("/meta", kimiServerMetaSchema, undefined, 500);
+          if (!isSupportedKimiServer(meta))
             throw new KimiError(
               "unsupported",
               `Kimi Server ${meta.server_version} is not a validated protocol version`,

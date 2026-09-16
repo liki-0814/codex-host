@@ -27,6 +27,7 @@ import {
   type RendererSessionImportClient,
   type RendererImportedThreadOpener,
 } from "./session-import-page.js";
+import { createSkillsSettingsPage, type RendererSkillsClient } from "./skills-page.js";
 import { createAppearanceSettingsPage } from "./appearance-page.js";
 import { createReleaseNotesElement } from "./release-notes.js";
 import { createAccountsSettingsPage, type RendererCodexAccountClient } from "./accounts-page.js";
@@ -76,6 +77,7 @@ export const DEFAULT_RENDERER_SETTINGS_PAGE_IDS = [
   "accounts",
   "models",
   "session-import",
+  "skills",
   "appearance",
   "updates",
   "about",
@@ -587,12 +589,14 @@ export function createDefaultRendererSettingsPages(
   openImportedThread: RendererImportedThreadOpener = () =>
     Promise.reject(new Error("Imported Thread navigation is unavailable")),
   getModelsClient: () => RendererModelsClient | null = () => null,
+  getSkillsClient: () => RendererSkillsClient | null = () => null,
 ): readonly RendererSettingsPageDefinition[] {
   return Object.freeze([
     createConnectionsSettingsPage(messages, getDiagnostics),
     createAccountsSettingsPage(messages, getAccountClient),
     createModelsSettingsPage(messages, getModelsClient),
     createSessionImportSettingsPage(messages, getSessionImportClient, openImportedThread),
+    createSkillsSettingsPage(messages, getSkillsClient, getDiagnostics),
     createAppearanceSettingsPage(messages),
     updatesPage(messages, getUpdateClient),
     aboutPage(messages),
@@ -620,3 +624,4 @@ export function createDefaultRendererSettingsRegistry(
 }
 
 export type { RendererCodexAccountClient } from "./accounts-page.js";
+export type { RendererSkillsClient } from "./skills-page.js";

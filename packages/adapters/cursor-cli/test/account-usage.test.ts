@@ -40,7 +40,8 @@ describe("Cursor native account quota", () => {
     ])
       expect(projectCursorAccountUsage(value, {}, {})).toBeNull();
     expect(
-      projectCursorAccountUsage({ planUsage: { autoPercentUsed: 0 } }, {}, {})?.credits.usedPercent,
+      projectCursorAccountUsage({ planUsage: { autoPercentUsed: 0 } }, {}, {})?.credits
+        ?.usedPercent,
     ).toBe(0);
   });
   it("does not read saved OAuth or make requests for an API-key or memory session", async () => {

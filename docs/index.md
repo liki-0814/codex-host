@@ -19,6 +19,7 @@
 | [`harness-command-integration.md`](harness-command-integration.md) | 说明新增 Harness 原生命令时的 Adapter、Host、Renderer 边界和验证要求。 |
 | [`claude-code-plan-mode.md`](claude-code-plan-mode.md) | 说明 Claude Code 规划模式、显式计划退出确认及原生权限状态边界。 |
 | [`harness-executable-discovery.md`](harness-executable-discovery.md) | 说明外部 Harness CLI 的跨平台发现机制、当前接入范围和剩余限制。 |
+| [`harness-skills.md`](harness-skills.md) | 说明 Skill 目录来源、可接入目标的判定、软链语义与断链处理。 |
 | [`acp-layer-follow-up.md`](acp-layer-follow-up.md) | 记录未来出现第二个生产 ACP Harness 后抽取共享 ACP 层的触发条件和边界。 |
 | [`codex-desktop-upgrade-diagnosis-playbook.md`](codex-desktop-upgrade-diagnosis-playbook.md) | 提供 Codex Desktop 更新后 Renderer、Bridge、Agent 和 Model 异常的排查流程。 |
 

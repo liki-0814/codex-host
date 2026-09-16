@@ -1,3 +1,7 @@
+import {
+  getSharedAgentGroupPreferenceStore,
+  type AgentGroupPreferenceStore,
+} from "../agent-group-preference.js";
 import type {
   HarnessAccountInspectParams,
   HarnessAccountInspectResult,
@@ -15,22 +19,33 @@ export interface RendererHarnessAccountClient {
 
 type HarnessAccount = HarnessAccountListResult["accounts"][number];
 
-function sortedAccounts(accounts: Iterable<HarnessAccount>): HarnessAccount[] {
-  return [...accounts].sort((a, b) => {
-    if (a.harnessId === "antigravity") return b.harnessId === "antigravity" ? 0 : 1;
-    if (b.harnessId === "antigravity") return -1;
-    return a.harnessId.localeCompare(b.harnessId);
-  });
-}
-
 /** Read-only telemetry, deliberately separate from Codex Account IDs and mutations. */
 export function createHarnessAccounts(
   signal: AbortSignal,
   getClient: () => RendererHarnessAccountClient | null,
   onChange: () => void,
+  groupPreference: AgentGroupPreferenceStore = getSharedAgentGroupPreferenceStore(),
 ) {
   let accounts: HarnessAccount[] = [];
   let refreshing = false;
+  const sortedAccounts = (values: Iterable<HarnessAccount>): HarnessAccount[] => {
+    const entries = groupPreference.list();
+    const order = [
+      ...entries.filter((e) => e.section === "main"),
+      ...entries.filter((e) => e.section === "more"),
+    ].map((e) => e.agent as string);
+    const rank = (id: string) => {
+      const index = order.indexOf(id);
+      return index < 0 ? order.length : index;
+    };
+    return [...values].sort(
+      (a, b) => rank(a.harnessId) - rank(b.harnessId) || a.harnessId.localeCompare(b.harnessId),
+    );
+  };
+  const unsubscribe = groupPreference.subscribe(() => {
+    if (!signal.aborted) onChange();
+  });
+  signal.addEventListener("abort", unsubscribe, { once: true });
 
   const loadProgressively = async (
     client: Required<
@@ -77,7 +92,7 @@ export function createHarnessAccounts(
 
   return {
     get accounts(): readonly HarnessAccount[] {
-      return accounts;
+      return sortedAccounts(accounts);
     },
     get refreshing() {
       return refreshing;

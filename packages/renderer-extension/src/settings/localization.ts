@@ -188,6 +188,15 @@ export interface RendererSettingsMessages {
   readonly aboutOpenSource: string;
   readonly aboutStarCallout: string;
   readonly aboutRepository: string;
+  readonly skillsDescription: string;
+  readonly skillsSearchPlaceholder: string;
+  readonly skillsEmpty: string;
+  readonly skillsNoMatches: string;
+  readonly skillsDirectoryMissing: string;
+  readonly skillsNativeAccess: string;
+  readonly accountBalanceRemaining: string;
+  readonly skillsBrokenLink: string;
+  readonly skillsRemoveBrokenLink: string;
   readonly pageLabels: Readonly<Record<DefaultRendererSettingsPageId, string>>;
 }
 
@@ -383,12 +392,23 @@ const ENGLISH_MESSAGES: RendererSettingsMessages = Object.freeze({
   aboutOpenSource: "codexhost is an open-source project. The source code is available at:",
   aboutStarCallout: "⭐ If this project helps you, please give us a Star! ⭐",
   aboutRepository: "Open-source repository",
+  skillsDescription:
+    "Skills in ~/.agents/skills. Link one into a connected Harness that reads only its own directory.",
+  skillsSearchPlaceholder: "Search Skills by name or description...",
+  skillsEmpty: "No Skills found",
+  skillsNoMatches: "No Skills match this search",
+  skillsDirectoryMissing: "Directory not present on this machine",
+  skillsNativeAccess: "read this directory natively, so no link is needed.",
+  accountBalanceRemaining: "remaining balance",
+  skillsBrokenLink: "Link target is missing",
+  skillsRemoveBrokenLink: "Remove link",
   pageLabels: Object.freeze({
     models: "Models",
     connections: "Connections",
     appearance: "Appearance",
     accounts: "Accounts",
     "session-import": "Session Import",
+    skills: "Skills",
     updates: "Updates",
     about: "About",
   }),
@@ -578,12 +598,23 @@ const CHINESE_MESSAGES: RendererSettingsMessages = Object.freeze({
   aboutOpenSource: "codexhost 是一个开源项目，开源地址：",
   aboutStarCallout: "⭐ 如果这个项目对你有帮助，请给我们一个 Star！⭐",
   aboutRepository: "开源仓库",
+  skillsDescription:
+    "~/.agents/skills 里的技能。只需接入那些仅读取自身目录的已连接 Harness。",
+  skillsSearchPlaceholder: "搜索技能的名称或描述...",
+  skillsEmpty: "没有找到技能",
+  skillsNoMatches: "没有匹配的技能",
+  skillsDirectoryMissing: "本机不存在该目录",
+  skillsNativeAccess: "原生读取该目录，无需接入。",
+  accountBalanceRemaining: "剩余余额",
+  skillsBrokenLink: "链接指向的技能已不存在",
+  skillsRemoveBrokenLink: "移除链接",
   pageLabels: Object.freeze({
     models: "模型",
     connections: "连接",
     appearance: "外观",
     accounts: "账号",
     "session-import": "会话导入",
+    skills: "技能",
     updates: "更新",
     about: "关于",
   }),

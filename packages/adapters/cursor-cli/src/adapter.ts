@@ -52,6 +52,7 @@ import {
   type CursorSessionInfo,
   type CursorTransportOptions,
 } from "./transport.js";
+import { CursorConnectionPool } from "./connection.js";
 import { readCursorNativeTurns, type CursorNativeTurn } from "./native-history.js";
 import { CursorTurnOutput, cursorSnapshot } from "./projection.js";
 import { CursorInteractions } from "./interactions.js";
@@ -120,6 +121,9 @@ export class CursorAdapter implements HarnessAdapter {
   };
   readonly harnessId = harnessIdSchema.parse("cursor-cli");
   readonly #sessions = new Set<CursorSession>();
+  /** Shared across every Session this adapter opens, so browsing Threads in one
+   *  working directory does not spawn and authenticate a CLI per Thread. */
+  readonly #pool = new CursorConnectionPool();
   readonly #inspections = new Map<
     string,
     { expires: number; pending: boolean; result: Promise<HarnessInspection> }
@@ -131,6 +135,7 @@ export class CursorAdapter implements HarnessAdapter {
     return {
       cwd: path.resolve(cwd),
       environment: { ...(this.options.environment ?? process.env), ...environment },
+      pool: this.#pool,
       ...(this.options.command ? { command: this.options.command } : {}),
       ...(this.options.timeoutMs ? { timeoutMs: this.options.timeoutMs } : {}),
     };
@@ -218,7 +223,11 @@ export class CursorAdapter implements HarnessAdapter {
       );
       if (input.kind === "resume") {
         const native = readCursorNativeTurns(transport.sessionId, options.cwd, options.environment);
-        cursorSnapshot(transport.sessionId, native, transport.replay);
+        // Opening already replayed the whole history. Keep that projection so
+        // the first read does not load the Session a second time.
+        session.adoptRestoredSnapshot(
+          cursorSnapshot(transport.sessionId, native, transport.replay),
+        );
         if (
           input.knownTurnRefs?.some(
             (ref) =>
@@ -254,6 +263,8 @@ export class CursorAdapter implements HarnessAdapter {
     await Promise.allSettled(
       [...this.#inspections.values()].map((inspection) => inspection.result),
     );
+    // Sessions only detach from their connection; the pool owns the CLI processes.
+    await this.#pool.close();
   }
 }
 
@@ -324,11 +335,29 @@ export class CursorSession implements HarnessSession {
       allowMissing,
     );
   }
+  /**
+   * History replayed while opening a resumed Session, held until the first
+   * read. It stops being authoritative as soon as the Session advances or its
+   * transport is replaced, and is dropped at those points.
+   */
+  #restoredSnapshot: Omit<HostThreadSnapshot, "state"> | undefined;
+  adoptRestoredSnapshot(snapshot: Omit<HostThreadSnapshot, "state">): void {
+    this.#restoredSnapshot = snapshot;
+  }
   async readSnapshot(): Promise<HarnessResult<HostThreadSnapshot>> {
     if (this.#closed) return rejected("invalidState", "Cursor session is closed");
     if (this.#active || this.#configuring) return rejected("sessionBusy", "Cursor session is busy");
+    const restored = this.#restoredSnapshot;
+    if (restored) {
+      this.#restoredSnapshot = undefined;
+      return { ok: true, value: { ...restored, state: structuredClone(this.initialState) } };
+    }
     this.#configuring = true;
-    const replay = new CursorTransport(this.transport.options);
+    // Re-reading needs its own CLI: a shared connection routes by Session id,
+    // so a second attachment for this Session would displace the live one.
+    const isolated = { ...this.transport.options };
+    delete isolated.pool;
+    const replay = new CursorTransport(isolated);
     try {
       const before = this.#native(this.#fresh);
       if (before.length === 0 && this.#fresh)
@@ -415,6 +444,8 @@ export class CursorSession implements HarnessSession {
         this.#commandTurns.add(command.turnId);
       this.#submitted.add(command.turnId);
       const active = { command, cancelled: false, task: Promise.resolve() };
+      // The Session is about to advance past the history captured at open.
+      this.#restoredSnapshot = undefined;
       this.#active = active;
       active.task = this.#run(command, before);
       return { ok: true, value: { turnId: command.turnId } };
@@ -443,6 +474,8 @@ export class CursorSession implements HarnessSession {
     const { mode, force } = decodeCursorPermission(id);
     if (force !== (this.transport.options.force ?? false)) {
       const { sessionId, options } = this.transport;
+      // The replay held from the previous transport does not belong to the new one.
+      this.#restoredSnapshot = undefined;
       await this.transport.close();
       this.transport = new CursorTransport({ ...options, force });
       const info = await this.transport.open(sessionId);

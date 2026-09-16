@@ -1,4 +1,13 @@
 import {
+  HARNESS_INSTALLATION_METHOD,
+  harnessInstallationParamsSchema,
+  harnessInstallationStateSchema,
+  type HarnessInstallationParams,
+  type HarnessInstallationState,
+  type HarnessSkillCatalog,
+  type HarnessSkillLinkParams,
+} from "@codexhost/shared-contracts";
+import {
   harnessExtensionParamsSchema,
   harnessExtensionStateSchema,
   type HarnessExtensionParams,
@@ -32,6 +41,10 @@ import {
   type HarnessPluginListResult,
   harnessWebUiOpenParamsSchema,
   harnessWebUiOpenResultSchema,
+  HARNESS_SKILLS_INSPECT_METHOD,
+  HARNESS_SKILLS_LINK_METHOD,
+  harnessSkillCatalogSchema,
+  harnessSkillLinkParamsSchema,
   harnessModelSelectionStateSchema,
   hostThreadIdSchema,
   threadInspectionParamsSchema,
@@ -149,6 +162,9 @@ export interface RendererModelClient extends Partial<RendererSessionImportClient
   listHarnessPlugins?(): Promise<HarnessPluginListResult>;
   clientForHost?(hostId: string): RendererModelClient | null;
   forkThread(input: ExternalThreadForkParams): Promise<ExternalThreadForkResult>;
+  installation?(input: HarnessInstallationParams): Promise<HarnessInstallationState>;
+  inspectSkills?(): Promise<HarnessSkillCatalog>;
+  linkSkill?(input: HarnessSkillLinkParams): Promise<HarnessSkillCatalog>;
   extension?(input: HarnessExtensionParams): Promise<HarnessExtensionState>;
   inspectHarness(input: HarnessInspectParams): Promise<HarnessInspection>;
   openHarnessWebUi?(input: HarnessWebUiOpenParams): Promise<void>;
@@ -226,7 +242,9 @@ export function createRendererModelClient(
   if (managers.length !== 1 || !source) return null;
   const manager = {
     sendRequest: createRendererRequestSender((method, params) =>
-      source.sendRequest(method, params),
+      method === HARNESS_INSTALLATION_METHOD
+        ? source.sendRequest(method, params, { timeoutMs: 600_000 })
+        : source.sendRequest(method, params),
     ),
   };
 
@@ -295,6 +313,27 @@ export function createRendererModelClient(
       return externalThreadForkResultSchema.parse(result);
     },
     inspectHarness,
+    async installation(input: HarnessInstallationParams) {
+      return harnessInstallationStateSchema.parse(
+        await manager.sendRequest(
+          HARNESS_INSTALLATION_METHOD,
+          harnessInstallationParamsSchema.parse(input),
+        ),
+      );
+    },
+    async inspectSkills() {
+      return harnessSkillCatalogSchema.parse(
+        await manager.sendRequest(HARNESS_SKILLS_INSPECT_METHOD, {}),
+      );
+    },
+    async linkSkill(input: HarnessSkillLinkParams) {
+      return harnessSkillCatalogSchema.parse(
+        await manager.sendRequest(
+          HARNESS_SKILLS_LINK_METHOD,
+          harnessSkillLinkParamsSchema.parse(input),
+        ),
+      );
+    },
     async extension(input: HarnessExtensionParams) {
       return harnessExtensionStateSchema.parse(
         await manager.sendRequest(

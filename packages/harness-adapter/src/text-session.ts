@@ -1,5 +1,6 @@
 import type {
   HarnessAccountSnapshot,
+  HarnessInstallationState,
   HarnessCommandCatalog,
   HarnessId,
   HarnessInspection,
@@ -560,6 +561,8 @@ export interface HarnessSessionImportCapability {
 }
 
 export interface HarnessAdapter {
+  /** Native CLI maintenance; never updates the Host plugin or starts a Session. */
+  installation?(action: "check" | "update"): Promise<HarnessInstallationState>;
   /** Explicit installation of a bundled, adapter-owned extension. Never accepts paths or code. */
   extension?(
     id: string,

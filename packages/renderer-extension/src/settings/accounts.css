@@ -565,3 +565,20 @@
   text-align: right;
   color: var(--settings-muted);
 }
+
+.settings-account-balance {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-account-balance strong {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.settings-account-balance__caption {
+  color: var(--settings-muted);
+  font-size: 12px;
+  line-height: 18px;
+}

@@ -1,3 +1,4 @@
+import { createHarnessInstallation } from "../../src/settings/harness-installation.js";
 import { createAgentGroupPreferenceStore } from "../../src/agent-group-preference.js";
 import { createSessionImportSettingsPage } from "../../src/settings/session-import-page.js";
 import {
@@ -263,7 +264,10 @@ describe("Read-only Harness accounts", () => {
     expect(changed).toHaveBeenCalledOnce();
   });
 
-  it("keeps Antigravity after the other Harness account rows", async () => {
+  it("follows component grouping and reacts to reordering without refreshing quotas", async () => {
+    const preference = createAgentGroupPreferenceStore(null);
+    preference.moveAgent("antigravity", "main", "claude-code");
+    const changed = vi.fn();
     const scope = new RendererSettingsPageScope();
     const mounted = createHarnessAccounts(
       scope.signal,
@@ -288,15 +292,26 @@ describe("Read-only Harness accounts", () => {
           ],
         }),
       }),
-      vi.fn(),
+      changed,
+      preference,
     );
     await mounted.refresh();
     expect(mounted.accounts.map(({ harnessId }) => harnessId)).toEqual([
+      "antigravity",
+      "claude-code",
+      "grok",
+    ]);
+    changed.mockClear();
+    preference.moveAgent("antigravity", "more");
+    expect(mounted.accounts.map((account) => account.harnessId)).toEqual([
       "claude-code",
       "grok",
       "antigravity",
     ]);
+    expect(changed).toHaveBeenCalledOnce();
     scope.dispose();
+    preference.moveAgent("grok", "main", "claude-code");
+    expect(changed).toHaveBeenCalledOnce();
   });
 
   it("falls back to the aggregate account request when progressive discovery is unavailable", async () => {
@@ -1823,5 +1838,81 @@ describe("Renderer Session Import page", () => {
     await Promise.resolve();
 
     expect(visibleText(content)).toBe(before);
+  });
+});
+
+describe("Harness version panel", () => {
+  it("checks read-only, disables current versions and updates only on click", async () => {
+    const document = new FakeDocument();
+    const scope = new RendererSettingsPageScope();
+    const state = {
+      currentVersion: "1.0.0",
+      latestVersion: "1.1.0",
+      updateAvailable: true,
+      canUpdate: true,
+    };
+    const pending = deferred<typeof state>();
+    const installation = vi.fn(async (input: { action: string }) =>
+      input.action === "update" ? pending.promise : state,
+    );
+    const panel = createHarnessInstallation(
+      document as unknown as Document,
+      scope.signal,
+      () => ({ installation }),
+      "pi",
+      "Pi",
+      true,
+    ) as unknown as FakeElement;
+    const buttons = descendants(panel).filter((node) => node.tagName === "button");
+    const [check, update] = buttons;
+    if (!check || !update) throw new Error("Missing version buttons");
+    expect(update.disabled).toBe(true);
+    await vi.waitFor(() => expect(update.disabled).toBe(false));
+    expect(installation).toHaveBeenCalledWith({ harnessId: "pi", action: "check" });
+    expect(visibleText(panel)).toContain("1.0.0");
+    update.dispatch("click");
+    expect(update.disabled).toBe(true);
+    expect(check.disabled).toBe(true);
+    update.dispatch("click");
+    expect(installation).toHaveBeenCalledTimes(2);
+    pending.resolve({ ...state, currentVersion: "1.1.0", updateAvailable: false });
+    await vi.waitFor(() => expect(update.textContent).toBe("已是最新"));
+    expect(update.disabled).toBe(true);
+    scope.dispose();
+    expect(document.defaultView.clearInterval).toHaveBeenCalled();
+  });
+
+  it("surfaces failures and allows a fresh check, with no mutation after disposal", async () => {
+    const document = new FakeDocument();
+    const scope = new RendererSettingsPageScope();
+    const installation = vi.fn().mockRejectedValueOnce(new Error("offline"));
+    const panel = createHarnessInstallation(
+      document as unknown as Document,
+      scope.signal,
+      () => ({ installation }),
+      "grok",
+      "Grok",
+      true,
+    ) as unknown as FakeElement;
+    await vi.waitFor(() => expect(visibleText(panel)).toContain("offline"));
+    const buttons = descendants(panel).filter((node) => node.tagName === "button");
+    const [check, update] = buttons;
+    if (!check || !update) throw new Error("Missing version buttons");
+    expect(check.disabled).toBe(false);
+    expect(update.disabled).toBe(true);
+    const pending = deferred<unknown>();
+    installation.mockReturnValueOnce(pending.promise);
+    check.dispatch("click");
+    const before = visibleText(panel);
+    scope.dispose();
+    pending.resolve({
+      currentVersion: "2.0.0",
+      latestVersion: "2.0.0",
+      canUpdate: true,
+      updateAvailable: false,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(visibleText(panel)).toBe(before);
   });
 });

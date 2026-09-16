@@ -145,7 +145,7 @@ Pi 用户可在“设置 → 模型”安装专用工具审批扩展或 Codex Fa
 
 “设置 → 会话导入”支持已接入的原生会话来源，包括 Pi、Qoder、Grok、Cursor 和 Kimi Code。本地未安装或在连接页隐藏的 Harness 不显示为可选来源。导入保留原项目路径与原生会话身份；运行状态未知时，应先在原生客户端关闭该会话，避免同时写入。
 
-Kimi Code 当前适配新版 **0.42.x Server API**，不兼容旧 Python kimi-cli；详细实现、验证范围和限制见 [Kimi Code 接入与验收](docs/kimi-code-integration-plan.md)。本节和下表描述当前源码能力，安装包是否包含这些功能取决于发行版本。
+Kimi Code 适配新版 **Server API（backend v2）**，已在 0.42.x 与 0.43.x 上验证，不兼容旧 Python kimi-cli；详细实现、验证范围和限制见 [Kimi Code 接入与验收](docs/kimi-code-integration-plan.md)。本节和下表描述当前源码能力，安装包是否包含这些功能取决于发行版本。
 
 ## 功能状态
 

@@ -721,6 +721,23 @@ export function installRendererBindingProbe(
     getUpdateClient: () => modelControl,
     getAccountClient: () => modelControl,
     getConnectionDiagnostics: () => connectionDiagnostics,
+    // Skills live in the user's home directory, so they belong to the local
+    // Host even when a remote Host owns the current Thread.
+    getSkillsClient: () => {
+      const client = modelClientForHost("local");
+      const inspectSkills = client?.inspectSkills;
+      const linkSkill = client?.linkSkill;
+      if (!inspectSkills || !linkSkill) return null;
+      return {
+        inspectSkills: () => inspectSkills.call(client),
+        linkSkill: (input) =>
+          linkSkill.call(client, {
+            skill: input.skill,
+            harnessId: harnessIdSchema.parse(input.harnessId),
+            action: input.action,
+          }),
+      };
+    },
     getSessionImportClient: () => {
       const client = modelClientForHost("local");
       const sources = client?.listSessionImportSources;

@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { WORKSPACE_CONTRACT_VERSION } from "./version.js";
 
+export { DELEGATION_CREATED_METHOD, delegationCreatedSchema } from "./delegation-created.js";
+export type { DelegationCreated } from "./delegation-created.js";
+
 export {
   harnessAccountSnapshotSchema,
   harnessAccountSourceSchema,
@@ -307,3 +310,28 @@ export {
   type HarnessExtensionParams,
   type HarnessExtensionState,
 } from "./harness-extension.js";
+
+export {
+  HARNESS_INSTALLATION_METHOD,
+  harnessInstallationParamsSchema,
+  harnessInstallationStateSchema,
+  type HarnessInstallationParams,
+  type HarnessInstallationState,
+} from "./harness-installation.js";
+
+export {
+  HARNESS_SKILLS_INSPECT_METHOD,
+  HARNESS_SKILLS_LINK_METHOD,
+  harnessSkillAccessSchema,
+  harnessSkillSchema,
+  harnessSkillBrokenLinkSchema,
+  harnessSkillTargetSchema,
+  harnessSkillCatalogSchema,
+  harnessSkillLinkParamsSchema,
+  type HarnessSkillAccess,
+  type HarnessSkill,
+  type HarnessSkillBrokenLink,
+  type HarnessSkillTarget,
+  type HarnessSkillCatalog,
+  type HarnessSkillLinkParams,
+} from "./harness-skills.js";

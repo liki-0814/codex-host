@@ -65,3 +65,5 @@ SSH 维持远端原生单账号，不传输本地凭据。
 - `packages/renderer-extension/src/settings/accounts.css`：明暗主题及窄窗口布局。
 - `packages/renderer-extension/test/settings/`：设置页及额度单元测试。
 - `tests/e2e/renderer-settings-accounts.spec.ts`：真实设置外壳与真实渲染代码，使用隔离的模拟客户端验证布局和交互；不连接真实账号服务。
+
+其他 Harness 的账号行跟随组件页保存的 Main / More 分组和拖拽顺序；Codex 账号仍在前面。额度请求返回的先后顺序不改变排列，调整组件顺序后无需重新查询额度。
