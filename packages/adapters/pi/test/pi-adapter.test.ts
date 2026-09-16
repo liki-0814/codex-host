@@ -1031,7 +1031,10 @@ describe("Pi HarnessAdapter Session", () => {
   });
 
   it("does not manufacture a Permission Mode capability", async () => {
-    const { adapter, dependencies } = fixture();
+    // Pi only gains Permission Modes from an installed extension, so the
+    // absence has to be arranged rather than inherited from the machine.
+    const home = await mkdtemp(path.join(os.tmpdir(), "pi-no-permission-extension-"));
+    const { adapter, dependencies } = fixture({ environment: { HOME: home } });
     await expect(adapter.inspect({ cwd: "/synthetic" })).resolves.toMatchObject({
       status: "ready",
       capabilities: { configuration: { selectPermissionMode: false } },
@@ -1053,6 +1056,7 @@ describe("Pi HarnessAdapter Session", () => {
     ).resolves.toMatchObject({ ok: false, error: { code: "unsupported" } });
     expect(dependencies.createTransport).toHaveBeenCalledOnce();
     await session.close();
+    await rm(home, { recursive: true, force: true });
   });
 
   it("projects a lazy-transport autonomous Turn with native identity and no Checkpoint", async () => {

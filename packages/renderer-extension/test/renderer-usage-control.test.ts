@@ -19,7 +19,9 @@ describe("Renderer Usage localization", () => {
     expect(formatRendererCredits(0.058778444510779446)).toBe("0.059 credits");
     expect(formatRendererCredits(0.00001)).toBe("<0.001 credits");
     expect(formatRendererCredits(0)).toBe("0 credits");
-    expect(rendererUsageMessages("zh-CN").recordedCredits).toBe("已记录消耗");
+    // Credits are reported as a Session total, not as an unlabeled amount.
+    expect(rendererUsageMessages("zh-CN").recordedCredits).toBe("会话已用 Credits");
+    expect(rendererUsageMessages("en").recordedCredits).toBe("Session credits spent");
   });
   it("uses Chinese copy only for the Chinese settings locale", () => {
     expect(rendererUsageMessages("zh-CN")).toMatchObject({

@@ -788,6 +788,9 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   }
 }
 
+/** A home directory that holds no Pi extensions, so argv stays deterministic. */
+const NO_EXTENSIONS_HOME = path.join(path.sep, "nonexistent", "codexhost-pi-test-home");
+
 describe("Pi RPC Turn aggregation", () => {
   it("shares pending close confirmation between concurrent callers", async () => {
     const child = new FakePiRpcProcess("final-only");
@@ -987,6 +990,9 @@ describe("Pi RPC Turn aggregation", () => {
           PATH: String.raw`C:\missing;C:\Pi`,
           PATHEXT: ".EXE;.CMD",
           ComSpec: String.raw`C:\Windows\System32\cmd.exe`,
+          // Extension lookup falls back to the real home directory, which
+          // would append whatever this machine happens to have installed.
+          HOME: NO_EXTENSIONS_HOME,
         },
       },
       {
@@ -1020,7 +1026,7 @@ describe("Pi RPC Turn aggregation", () => {
   it("builds mutually exclusive Native Session resume and Fork argv", async () => {
     const options = {
       cwd: process.cwd(),
-      environment: {},
+      environment: { HOME: NO_EXTENSIONS_HOME },
       command: "/synthetic/pi",
     };
     expect(

@@ -49,6 +49,8 @@ vi.mock("../src/renderer-composer-dom.js", async (importOriginal) => {
         credits: { anchor: null, place: vi.fn(), root: { remove: vi.fn() } },
         usage: null,
         harnessCommands: {
+          // The probe attaches hover and focus listeners here to prefetch commands.
+          root: { addEventListener: vi.fn() },
           setCommands: vi.fn(),
           setExecuting: vi.fn(),
           setLocale: vi.fn(),
