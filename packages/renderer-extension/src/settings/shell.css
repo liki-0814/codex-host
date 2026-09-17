@@ -1896,7 +1896,12 @@
   }
 
   .settings-account-header > .settings-command-button,
-  .settings-connection-page-header > .settings-command-button {
+  .settings-connection-page-header > .settings-command-button,
+  .settings-preference-row > .settings-command-button {
+    width: 100%;
+  }
+
+  .settings-preference-row > .settings-model-toolbar {
     width: 100%;
   }
 
@@ -1950,6 +1955,52 @@
     scroll-behavior: auto !important;
     transition-duration: 0s !important;
   }
+}
+
+.settings-preference-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 24px;
+  min-width: 0;
+  padding: 14px 0;
+}
+
+.settings-preference-row + .settings-preference-row {
+  border-top: 1px solid var(--settings-divider);
+}
+
+.settings-preference-row__copy {
+  display: flex;
+  flex: 1 1 16rem;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-preference-row__copy strong {
+  color: var(--settings-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.settings-preference-row__copy > span {
+  color: var(--settings-muted);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.settings-preference-row__copy > span:empty {
+  display: none;
+}
+
+.settings-preference-row > .settings-model-toolbar,
+.settings-preference-row > .settings-command-button {
+  flex: 0 0 auto;
+  align-self: center;
 }
 
 .settings-model-tabs {
