@@ -134,8 +134,7 @@ class OutputCollector {
 
 describe("QoderAdapter", () => {
   describe("inspect()", () => {
-    it("retries an expired synchronous discovery failure", async () => {
-      const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    it("retries a synchronous discovery failure without waiting for expiry", async () => {
       const resolveExecutable = vi
         .fn()
         .mockImplementationOnce(() => {
@@ -145,14 +144,65 @@ describe("QoderAdapter", () => {
       const adapter = new QoderAdapter({ resolveExecutable, getAvailableModels: async () => [] });
       try {
         expect((await adapter.inspect()).status).toBe("notInstalled");
-        now.mockReturnValue(5001);
         expect((await adapter.inspect()).status).toBe("ready");
         expect(resolveExecutable).toHaveBeenCalledTimes(2);
       } finally {
-        now.mockRestore();
         await adapter.close();
       }
     });
+
+    it.each(["global", "cn"] as const)(
+      "keeps the %s catalog until explicit refresh, scoped by cwd",
+      async (variant) => {
+        const now = vi.spyOn(Date, "now").mockReturnValue(0);
+        const getAvailableModels = vi.fn(async () => []);
+        const adapter = new QoderAdapter({
+          variant,
+          resolveExecutable: () => "qodercli",
+          getAvailableModels,
+        });
+        try {
+          const first = await adapter.inspect({ cwd: "D:/project" });
+          expect(first.status).toBe("ready");
+          now.mockReturnValue(365 * 24 * 60 * 60 * 1000);
+          expect(await adapter.inspect({ cwd: "D:/project" })).toBe(first);
+          expect(getAvailableModels).toHaveBeenCalledTimes(1);
+          expect((await adapter.inspect({ cwd: "D:/project", refresh: true })).status).toBe(
+            "ready",
+          );
+          expect(getAvailableModels).toHaveBeenCalledTimes(2);
+          expect((await adapter.inspect({ cwd: "D:/other" })).status).toBe("ready");
+          expect(getAvailableModels).toHaveBeenCalledTimes(3);
+        } finally {
+          now.mockRestore();
+          await adapter.close();
+        }
+      },
+    );
+
+    it.each(["global", "cn"] as const)(
+      "does not cache %s model probe failures",
+      async (variant) => {
+        const queryFactory = vi
+          .fn<QoderQueryFactory>()
+          .mockImplementationOnce(() => {
+            throw new Error("authentication required");
+          })
+          .mockReturnValue(new FakeQoderQuery());
+        const adapter = new QoderAdapter({
+          variant,
+          resolveExecutable: () => "qodercli",
+          queryFactory,
+        });
+        try {
+          expect((await adapter.inspect()).status).toBe("unavailable");
+          expect((await adapter.inspect()).status).toBe("ready");
+          expect(queryFactory).toHaveBeenCalledTimes(2);
+        } finally {
+          await adapter.close();
+        }
+      },
+    );
 
     it("returns notInstalled when executable is not found", async () => {
       const adapter = new QoderAdapter({
@@ -175,6 +225,7 @@ describe("QoderAdapter", () => {
           resolveCalls++;
           return "D:/tools/qodercli.exe";
         },
+        getAvailableModels: async () => [],
       });
 
       const inspection1 = await adapter.inspect({ cwd: "D:/project" });
@@ -244,7 +295,7 @@ describe("QoderAdapter", () => {
       });
     });
 
-    it("closes probeQuery in finally and returns empty catalog when getAvailableModels throws", async () => {
+    it("closes probeQuery and reports unavailable when getAvailableModels throws", async () => {
       const closeSpy = vi.fn(async () => undefined);
       const throwingQuery = {
         getAvailableModels: vi.fn(async () => {
@@ -259,11 +310,10 @@ describe("QoderAdapter", () => {
       });
 
       const inspection = await adapter.inspect({ cwd: "D:/project" });
-      expect(inspection.status).toBe("ready");
-      if (inspection.status === "ready") {
-        expect(inspection.catalog.models).toEqual([]);
-        expect(inspection.catalog.defaultModel).toBeUndefined();
-      }
+      expect(inspection).toMatchObject({
+        status: "unavailable",
+        error: { message: "CLI connection failed" },
+      });
       expect(closeSpy).toHaveBeenCalledOnce();
     });
   });
@@ -457,6 +507,7 @@ describe("QoderAdapter", () => {
             id: "resp-1",
             type: "message",
             role: "assistant",
+            stop_reason: "end_turn",
             content: [{ type: "text", text: "Feature built successfully" }],
           },
           parent_tool_use_id: null,
@@ -756,6 +807,7 @@ describe("QoderAdapter", () => {
       expect(cancelResult.ok).toBe(true);
 
       expect(fakeQuery.interrupt).toHaveBeenCalledTimes(1);
+      fakeQuery.push({ type: "result", subtype: "success" } as SDKResultMessage);
 
       await collector.waitFor(
         (o) =>
@@ -830,6 +882,7 @@ describe("QoderAdapter", () => {
         turnId,
       });
       expect(cancelResult.ok).toBe(true);
+      fakeQuery.push({ type: "result", subtype: "success" } as SDKResultMessage);
 
       const reasoningCompleted = await collector.waitFor(
         (o) =>
@@ -1211,7 +1264,7 @@ describe("QoderAdapter", () => {
       expect(catalog.thinkingOptions).toEqual([]);
     });
 
-    it("preserves native groups, availability, and server default", () => {
+    it("preserves the native model list and order without extending the shared catalog", () => {
       const catalog = parseQoderModelCatalog([
         {
           value: "qoder-default",
@@ -1236,12 +1289,22 @@ describe("QoderAdapter", () => {
         },
       ]);
 
-      expect(catalog.models).toMatchObject([
-        { label: "Default model", group: "default", selectable: false },
-        { label: "New model", group: "new", selectable: true },
-        { label: "Custom model", group: "custom", selectable: true },
+      expect(catalog.models).toEqual([
+        { ref: encodeQoderModelRef("qoder-default"), label: "Default model" },
+        { ref: encodeQoderModelRef("qoder-new"), label: "New model" },
+        { ref: encodeQoderModelRef("qoder-custom/provider-model"), label: "Custom model" },
       ]);
       expect(catalog.defaultModel).toEqual(encodeQoderModelRef("qoder-new"));
+    });
+
+    it("does not discard the native default or thinking options based on isEnabled", () => {
+      const catalog = parseQoderModelCatalog([
+        { value: "native-default", isEnabled: false, isDefault: true, efforts: ["high"] },
+        { value: "another-model", isEnabled: true },
+      ]);
+      expect(catalog.models).toHaveLength(2);
+      expect(catalog.defaultModel).toEqual(encodeQoderModelRef("native-default"));
+      expect(catalog.thinkingOptions).toEqual([{ id: "high", label: "High" }]);
     });
 
     it("returns empty catalog when dynamic models are unavailable or empty", () => {
@@ -1387,6 +1450,7 @@ describe("QoderAdapter", () => {
           capturedOptions = input.options;
           return fakeQuery;
         },
+        getAvailableModels: fakeQuery.getAvailableModels,
       });
 
       const inspection = await adapter.inspect({ cwd: "D:/project" });
@@ -1448,6 +1512,7 @@ describe("QoderAdapter", () => {
       const adapter = new QoderAdapter({
         resolveExecutable: () => "D:/tools/qodercli.exe",
         queryFactory: () => fakeQuery,
+        getAvailableModels: fakeQuery.getAvailableModels,
       });
 
       await adapter.inspect({ cwd: "D:/project" });
@@ -2043,6 +2108,7 @@ describe("QoderAdapter", () => {
         type: "turn.cancel",
         turnId,
       });
+      fakeQuery.push({ type: "result", subtype: "success" } as SDKResultMessage);
 
       const completed = await collector.waitFor(
         (o) => o.kind === "event" && o.event.type === "turn.completed" && o.event.turnId === turnId,
@@ -2160,6 +2226,7 @@ describe("QoderAdapter", () => {
           session_id: "test-sess",
           message: {
             role: "assistant",
+            stop_reason: "end_turn",
             content: [{ type: "text", text: "Working tree is clean." }],
           },
           parent_tool_use_id: null,

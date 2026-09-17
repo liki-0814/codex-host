@@ -155,6 +155,7 @@ describe("production Desktop Controller", () => {
         "cursor-cli",
         "qoder",
         "kimi-code",
+        "qoder-cn",
         "hermes",
       ],
       timeoutMs: 90_000,

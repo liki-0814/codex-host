@@ -1,6 +1,7 @@
 import { QoderSubagentObserver } from "./qoder-subagents.js";
 import { randomUUID } from "node:crypto";
 import type {
+  HarnessError,
   HarnessOutput,
   HarnessResult,
   HarnessSession,
@@ -66,11 +67,7 @@ import {
   type NativeTurnRef,
 } from "@codexhost/shared-contracts";
 
-import {
-  accessTokenFromEnv,
-  getSessionMessages as defaultGetSessionMessages,
-  qodercliAuth,
-} from "@qoder-ai/qoder-agent-sdk";
+import { QODER_RUNTIMES, qoderAuthForEnvironment, type QoderVariant } from "./qoder-runtime.js";
 
 import { mapQoderException, mapQoderResultError } from "./qoder-errors.js";
 import { qoderEnvironment } from "./qoder-command.js";
@@ -144,6 +141,7 @@ interface ActiveTurnState {
   accumulatedStreamingText: string;
   activeStreamingReasoningItemId?: HostItemId | undefined;
   accumulatedStreamingReasoning: string;
+  cancellationRequested?: boolean;
   isCompaction?: boolean | undefined;
   compactionItemId?: HostItemId | undefined;
 }
@@ -165,6 +163,7 @@ interface PendingInteraction {
 }
 
 export interface QoderSessionOptions {
+  variant?: QoderVariant;
   sessionId: string;
   cwd: string;
   environment?: Record<string, string | undefined>;
@@ -183,7 +182,7 @@ export interface QoderSessionOptions {
 }
 
 export class QoderSession implements HarnessSession {
-  readonly harnessId: HarnessId = harnessIdSchema.parse("qoder");
+  readonly harnessId: HarnessId;
   readonly capabilities: HarnessSessionCapabilities;
   readonly commands: HarnessCommandCapability;
   readonly initialState: HarnessSessionState;
@@ -215,6 +214,9 @@ export class QoderSession implements HarnessSession {
   #consumerLoopDone: Promise<void>;
 
   constructor(options: QoderSessionOptions) {
+    const variant = options.variant ?? "global";
+    const runtime = QODER_RUNTIMES[variant];
+    this.harnessId = harnessIdSchema.parse(runtime.harnessId);
     this.outputs = this.#channel.outputs;
     this.commands = {
       list: async () => ({ ok: true, value: this.#commandCatalog }),
@@ -223,11 +225,11 @@ export class QoderSession implements HarnessSession {
     this.#sessionId = options.sessionId;
     this.#cwd = options.cwd;
     this.#catalog = options.catalog;
-    this.#getSessionMessages = options.getSessionMessages ?? defaultGetSessionMessages;
+    this.#getSessionMessages = options.getSessionMessages ?? runtime.sdk.getSessionMessages;
     this.#onClosed = options.onClosed;
 
     const nativeRef: NativeSessionRef = nativeSessionRefSchema.parse({
-      harnessId: "qoder",
+      harnessId: this.harnessId,
       nativeSessionId: options.sessionId,
       formatVersion: 1,
     });
@@ -288,7 +290,7 @@ export class QoderSession implements HarnessSession {
     const permissionMode = mapToQoderPermissionMode(options.permissionModeId);
 
     const environment = qoderEnvironment(options.environment);
-    const auth = environment.QODER_PERSONAL_ACCESS_TOKEN ? accessTokenFromEnv() : qodercliAuth();
+    const auth = qoderAuthForEnvironment(variant, environment);
 
     const extraArgs: Record<string, string | null> = {};
     if (effectiveThinkingOptionId) {
@@ -376,7 +378,7 @@ export class QoderSession implements HarnessSession {
 
   #createNativeTurnRef(nativeTurnKey: string): NativeTurnRef {
     return nativeTurnRefSchema.parse({
-      harnessId: "qoder",
+      harnessId: this.harnessId,
       nativeSessionId: this.#state.nativeRef?.nativeSessionId ?? this.#sessionId,
       nativeTurnKey,
       formatVersion: 1,
@@ -389,34 +391,13 @@ export class QoderSession implements HarnessSession {
         if (this.#closed) break;
         await this.#dispatchMessage(message);
       }
+      await this.#close({
+        code: "processExited",
+        message: "Qoder message stream ended unexpectedly",
+        retryable: true,
+      });
     } catch (error) {
-      if (!this.#closed) {
-        const harnessError = mapQoderException(error);
-        if (this.#activeTurn) {
-          const turnId = this.#activeTurn.turnId;
-          const nativeTurnRef = this.#createNativeTurnRef(this.#activeTurn.userMessageUuid);
-          if (this.#activeTurn.compactionItemId) {
-            this.#emitEvent({
-              type: "item.completed",
-              turnId,
-              snapshot: {
-                item: {
-                  type: "contextCompaction",
-                  itemId: this.#activeTurn.compactionItemId,
-                },
-                outcome: { status: "failed", error: harnessError },
-              },
-            });
-          }
-          this.#activeTurn = null;
-          this.#emitEvent({
-            type: "turn.completed",
-            turnId,
-            nativeTurnRef,
-            outcome: { status: "failed", error: harnessError },
-          });
-        }
-      }
+      await this.#close(mapQoderException(error));
     }
   }
 
@@ -451,7 +432,7 @@ export class QoderSession implements HarnessSession {
         this.#state = {
           ...this.#state,
           nativeRef: nativeSessionRefSchema.parse({
-            harnessId: "qoder",
+            harnessId: this.harnessId,
             nativeSessionId: message.session_id,
             formatVersion: 1,
           }),
@@ -848,9 +829,16 @@ export class QoderSession implements HarnessSession {
   }
 
   #handleResultMessage(result: SDKResultMessage): void {
-    if (!this.#activeTurn) return;
+    if (!this.#activeTurn) {
+      if (result.subtype !== "success") void this.#close(mapQoderResultError(result));
+      return;
+    }
 
     const turnId = this.#activeTurn.turnId;
+    const cancelled: HostItemOutcome | undefined = this.#activeTurn.cancellationRequested
+      ? { status: "cancelled", reason: "User cancelled turn" }
+      : undefined;
+    this.#cancelPendingInteractions(turnId, "Turn ended");
     this.#usageTracker.observeResult(result);
     const usage = this.#usageTracker.snapshot();
     if (usage) {
@@ -876,7 +864,8 @@ export class QoderSession implements HarnessSession {
             durationMs: Math.max(0, Date.now() - activeTool.startedAtMs),
           },
           outcome:
-            result.subtype === "success"
+            cancelled ??
+            (result.subtype === "success"
               ? { status: "succeeded" }
               : {
                   status: "failed",
@@ -885,7 +874,7 @@ export class QoderSession implements HarnessSession {
                     message: "Tool incomplete on result",
                     retryable: false,
                   },
-                },
+                }),
         },
       });
     }
@@ -901,9 +890,9 @@ export class QoderSession implements HarnessSession {
             type: "agentMessage",
             itemId: this.#activeTurn.activeStreamingMessageItemId,
             text: this.#activeTurn.accumulatedStreamingText,
-            phase: result.subtype === "success" ? "final_answer" : "commentary",
+            phase: !cancelled && result.subtype === "success" ? "final_answer" : "commentary",
           },
-          outcome: { status: "succeeded" },
+          outcome: cancelled ?? { status: "succeeded" },
         },
       });
       this.#activeTurn.activeStreamingMessageItemId = undefined;
@@ -921,7 +910,7 @@ export class QoderSession implements HarnessSession {
             itemId: this.#activeTurn.activeStreamingReasoningItemId,
             text: this.#activeTurn.accumulatedStreamingReasoning,
           },
-          outcome: { status: "succeeded" },
+          outcome: cancelled ?? { status: "succeeded" },
         },
       });
       this.#activeTurn.activeStreamingReasoningItemId = undefined;
@@ -931,12 +920,13 @@ export class QoderSession implements HarnessSession {
     // Close any active compaction item
     if (this.#activeTurn.compactionItemId) {
       const outcome: HostItemOutcome =
-        result.subtype === "success"
+        cancelled ??
+        (result.subtype === "success"
           ? { status: "succeeded" }
           : {
               status: "failed",
               error: mapQoderResultError(result),
-            };
+            });
       this.#emitEvent({
         type: "item.completed",
         turnId: this.#activeTurn.turnId,
@@ -958,14 +948,16 @@ export class QoderSession implements HarnessSession {
     const nativeTurnRef = this.#createNativeTurnRef(userMessageUuid);
     const checkpoint: NativeCheckpointRef | undefined = lastAssistantMessageUuid
       ? nativeCheckpointRefSchema.parse({
-          harnessId: "qoder",
+          harnessId: this.harnessId,
           nativeSessionId: this.#state.nativeRef?.nativeSessionId ?? this.#sessionId,
           checkpointId: lastAssistantMessageUuid,
           formatVersion: 1,
         })
       : undefined;
 
-    if (result.subtype === "success") {
+    if (cancelled) {
+      this.#emitEvent({ type: "turn.completed", turnId, nativeTurnRef, outcome: cancelled });
+    } else if (result.subtype === "success") {
       this.#emitEvent({
         type: "turn.completed",
         turnId,
@@ -988,7 +980,7 @@ export class QoderSession implements HarnessSession {
     input: unknown,
     context: CanUseToolContext,
   ): Promise<PermissionResult> {
-    if (this.#closed || !this.#activeTurn) {
+    if (this.#closed || !this.#activeTurn || this.#activeTurn.cancellationRequested) {
       return { behavior: "deny", message: "Session is not active", interrupt: true };
     }
 
@@ -1180,7 +1172,7 @@ export class QoderSession implements HarnessSession {
         dir: this.#cwd,
         view: "historical",
       });
-      const snapshot = mapQoderSnapshot(messages, this.#sessionId);
+      const snapshot = mapQoderSnapshot(messages, this.#sessionId, this.harnessId);
       return { ok: true, value: snapshot };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1227,7 +1219,7 @@ export class QoderSession implements HarnessSession {
         // Diagnostic failure only, never fails turn
       }
     }
-    if (changed) {
+    if (changed && !this.#closed) {
       const snapshot = this.#usageTracker.snapshot();
       if (snapshot) {
         const targetTurnId = forTurnId ?? this.#activeTurn?.turnId;
@@ -1307,102 +1299,19 @@ export class QoderSession implements HarnessSession {
           return { ok: true, value: { cancellationRequested: true } };
         }
 
+        const turn = this.#activeTurn;
+        turn.cancellationRequested = true;
         this.#cancelPendingInteractions(command.turnId, "Turn cancelled by user");
-
-        for (const activeTool of this.#activeTools.values()) {
-          this.#emitEvent({
-            type: "item.completed",
-            turnId: command.turnId,
-            snapshot: {
-              item: {
-                type: "toolExecution",
-                itemId: activeTool.itemId,
-                toolName: activeTool.toolName,
-                arguments: activeTool.arguments,
-                durationMs: Math.max(0, Date.now() - activeTool.startedAtMs),
-              },
-              outcome: {
-                status: "failed",
-                error: {
-                  code: "nativeFailure",
-                  message: "Tool cancelled by user",
-                  retryable: false,
-                },
-              },
-            },
-          });
-        }
-        this.#activeTools.clear();
-
-        // Close any active streaming text message item
-        if (this.#activeTurn.activeStreamingMessageItemId) {
-          this.#emitEvent({
-            type: "item.completed",
-            turnId: this.#activeTurn.turnId,
-            snapshot: {
-              item: {
-                type: "agentMessage",
-                itemId: this.#activeTurn.activeStreamingMessageItemId,
-                text: this.#activeTurn.accumulatedStreamingText,
-              },
-              outcome: { status: "cancelled", reason: "Turn cancelled by user" },
-            },
-          });
-          this.#activeTurn.activeStreamingMessageItemId = undefined;
-          this.#activeTurn.accumulatedStreamingText = "";
-        }
-
-        // Close any active streaming reasoning item
-        if (this.#activeTurn.activeStreamingReasoningItemId) {
-          this.#emitEvent({
-            type: "item.completed",
-            turnId: this.#activeTurn.turnId,
-            snapshot: {
-              item: {
-                type: "reasoning",
-                itemId: this.#activeTurn.activeStreamingReasoningItemId,
-                text: this.#activeTurn.accumulatedStreamingReasoning,
-              },
-              outcome: { status: "cancelled", reason: "Turn cancelled by user" },
-            },
-          });
-          this.#activeTurn.activeStreamingReasoningItemId = undefined;
-          this.#activeTurn.accumulatedStreamingReasoning = "";
-        }
-
-        // Close any active compaction item
-        if (this.#activeTurn.compactionItemId) {
-          this.#emitEvent({
-            type: "item.completed",
-            turnId: this.#activeTurn.turnId,
-            snapshot: {
-              item: {
-                type: "contextCompaction",
-                itemId: this.#activeTurn.compactionItemId,
-              },
-              outcome: { status: "cancelled", reason: "Turn cancelled by user" },
-            },
-          });
-          this.#activeTurn.compactionItemId = undefined;
-        }
 
         try {
           await this.#query.interrupt();
-        } catch {
-          // Interrupt call may fail if query has already completed
+        } catch (error) {
+          // Do not release the Turn lock when interruption was not confirmed.
+          if (this.#activeTurn === turn) turn.cancellationRequested = false;
+          return { ok: false, error: mapQoderException(error) };
         }
-
-        if (this.#activeTurn) {
-          const turnId = this.#activeTurn.turnId;
-          const nativeTurnRef = this.#createNativeTurnRef(this.#activeTurn.userMessageUuid);
-          this.#activeTurn = null;
-          this.#emitEvent({
-            type: "turn.completed",
-            turnId,
-            nativeTurnRef,
-            outcome: { status: "cancelled", reason: "User cancelled turn" },
-          });
-        }
+        // The receipt is not a Turn boundary. Keep routing late output to this
+        // Turn until its native result arrives, even if a follow-up is requested.
 
         return { ok: true, value: { cancellationRequested: true } };
       }
@@ -1850,8 +1759,15 @@ export class QoderSession implements HarnessSession {
   }
 
   async close(): Promise<void> {
+    await this.#close();
+  }
+
+  async #close(error?: HarnessError): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
+    const outcome: HostItemOutcome = error
+      ? { status: "failed", error }
+      : { status: "cancelled", reason: "Session closed" };
 
     if (this.#activeTurn) {
       this.#cancelPendingInteractions(this.#activeTurn.turnId, "Session closed");
@@ -1869,7 +1785,11 @@ export class QoderSession implements HarnessSession {
             },
             outcome: {
               status: "failed",
-              error: { code: "nativeFailure", message: "Session closed", retryable: false },
+              error: error ?? {
+                code: "nativeFailure",
+                message: "Session closed",
+                retryable: false,
+              },
             },
           },
         });
@@ -1887,7 +1807,7 @@ export class QoderSession implements HarnessSession {
               itemId: this.#activeTurn.activeStreamingMessageItemId,
               text: this.#activeTurn.accumulatedStreamingText,
             },
-            outcome: { status: "cancelled", reason: "Session closed" },
+            outcome,
           },
         });
         this.#activeTurn.activeStreamingMessageItemId = undefined;
@@ -1905,7 +1825,7 @@ export class QoderSession implements HarnessSession {
               itemId: this.#activeTurn.activeStreamingReasoningItemId,
               text: this.#activeTurn.accumulatedStreamingReasoning,
             },
-            outcome: { status: "cancelled", reason: "Session closed" },
+            outcome,
           },
         });
         this.#activeTurn.activeStreamingReasoningItemId = undefined;
@@ -1922,7 +1842,7 @@ export class QoderSession implements HarnessSession {
               type: "contextCompaction",
               itemId: this.#activeTurn.compactionItemId,
             },
-            outcome: { status: "cancelled", reason: "Session closed" },
+            outcome,
           },
         });
         this.#activeTurn.compactionItemId = undefined;
@@ -1935,7 +1855,7 @@ export class QoderSession implements HarnessSession {
         type: "turn.completed",
         turnId,
         nativeTurnRef,
-        outcome: { status: "cancelled", reason: "Session closed" },
+        outcome,
       });
     } else {
       for (const [id, pending] of this.#pendingInteractions) {
@@ -1950,6 +1870,7 @@ export class QoderSession implements HarnessSession {
       }
     }
 
+    if (error) this.#emitEvent({ type: "session.faulted", error });
     this.#pushableInput.end();
 
     try {

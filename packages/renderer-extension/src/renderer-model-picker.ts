@@ -1,9 +1,7 @@
 import { readHiddenModels, modelVisibilityId } from "./renderer-model-visibility.js";
 import { mountModelConfigurationControls } from "./model-configuration-controls.js";
 import type {
-  HarnessModel,
   HarnessModelCatalog,
-  HarnessModelGroup,
   HarnessModelRef,
   HarnessThinkingOption,
   HarnessThinkingOptionId,
@@ -20,6 +18,9 @@ import {
   ensureRendererTriggerChipStyle,
   TRIGGER_CHIP_CLASS,
 } from "./renderer-trigger-chip-style.js";
+
+import { readModelFavorites, writeModelFavorites } from "./renderer-model-favorites.js";
+import { createModelFavoriteIcon, ensureModelOptionStyle } from "./renderer-model-option-style.js";
 
 const MENU_CLASSES =
   "fixed z-50 overflow-hidden rounded-xl bg-token-dropdown-background/90 text-token-foreground shadow-lg backdrop-blur-xl";
@@ -54,11 +55,12 @@ export interface RendererModelPickerPresentation {
 }
 
 interface ModelOptionControl {
+  row: HTMLElement;
+  favorite: HTMLButtonElement;
+  label: string;
   button: HTMLButtonElement;
   check: HTMLElement;
   searchText: string;
-  selectable?: boolean;
-  groupHeading?: HTMLElement;
 }
 
 interface ThinkingOptionControl {
@@ -77,6 +79,8 @@ export interface RendererModelPickerControl {
   searchInput: HTMLInputElement;
   searchHeader: HTMLElement;
   searchEmpty: HTMLElement;
+  harnessId: string;
+  favorites: Set<string>;
   options: Map<string, ModelOptionControl>;
   thinkingOptions: Map<string, ThinkingOptionControl>;
   configuration: ReturnType<typeof mountModelConfigurationControls>;
@@ -253,66 +257,6 @@ function createHeading(text: string): HTMLElement {
   return heading;
 }
 
-function createModelGroupHeading(text: string): HTMLElement {
-  const heading = document.createElement("div");
-  heading.className = HEADING_CLASSES;
-  heading.dataset.codexhostModelGroupHeading = "true";
-  heading.setAttribute("role", "heading");
-  heading.setAttribute("aria-level", "3");
-  heading.tabIndex = -1;
-  heading.style.display = "flex";
-  heading.style.alignItems = "center";
-  heading.style.gap = "8px";
-  heading.style.marginTop = "8px";
-  heading.style.paddingTop = "8px";
-  heading.style.fontSize = "11px";
-  heading.style.fontWeight = "600";
-  heading.style.letterSpacing = "0.06em";
-  heading.style.textTransform = "uppercase";
-  heading.style.pointerEvents = "none";
-  heading.style.userSelect = "none";
-  heading.style.cursor = "default";
-
-  const label = document.createElement("span");
-  label.textContent = text;
-  const rule = document.createElement("span");
-  rule.setAttribute("aria-hidden", "true");
-  rule.style.flex = "1";
-  rule.style.height = "1px";
-  rule.style.backgroundColor = "var(--token-border, rgba(255, 255, 255, 0.14))";
-  heading.append(label, rule);
-  return heading;
-}
-
-const MODEL_GROUP_LABELS: Readonly<Record<HarnessModelGroup, string>> = {
-  default: "Default",
-  new: "New",
-  custom: "Custom",
-};
-
-export interface RendererModelPickerGroup {
-  group: HarnessModelGroup;
-  label: string;
-  models: HarnessModel[];
-}
-
-export function rendererModelPickerGroups(
-  models: readonly HarnessModel[],
-): RendererModelPickerGroup[] {
-  if (!models.some((model) => model.group !== undefined)) return [];
-  return (Object.keys(MODEL_GROUP_LABELS) as HarnessModelGroup[])
-    .map((group) => ({
-      group,
-      label: MODEL_GROUP_LABELS[group],
-      models: models.filter((model) => (model.group ?? "default") === group),
-    }))
-    .filter(({ models: groupModels }) => groupModels.length > 0)
-    .map((group) => ({
-      ...group,
-      label: `${group.label} (${group.models.length})`,
-    }));
-}
-
 export function syncRendererLabelText(
   element: { textContent: string | null },
   text: string,
@@ -325,21 +269,31 @@ export function syncRendererLabelText(
 function applyModelSearchFilter(control: RendererModelPickerControl): void {
   const query = control.searchInput.value.trim().toLowerCase();
   let visibleCount = 0;
-  const visibleGroups = new Map<HTMLElement, boolean>();
   for (const option of control.options.values()) {
     const matches = query.length === 0 || option.searchText.includes(query);
-    option.button.hidden = !matches;
+    option.row.hidden = !matches;
+    option.row.style.display = matches ? "flex" : "none";
     if (matches) visibleCount += 1;
-    if (option.groupHeading && matches) visibleGroups.set(option.groupHeading, true);
-  }
-  for (const option of control.options.values()) {
-    if (option.groupHeading && !visibleGroups.has(option.groupHeading)) {
-      option.groupHeading.hidden = true;
-    } else if (option.groupHeading) {
-      option.groupHeading.hidden = false;
-    }
   }
   control.searchEmpty.hidden = query.length === 0 || visibleCount > 0;
+}
+
+function syncFavorite(option: ModelOptionControl, favorite: boolean): void {
+  option.favorite.setAttribute("aria-pressed", String(favorite));
+  const label = `${favorite ? "Unfavorite" : "Favorite"} ${option.label}`;
+  option.favorite.setAttribute("aria-label", label);
+  option.favorite.title = label;
+}
+
+function orderModelFavorites(control: RendererModelPickerControl): void {
+  // Map iteration preserves the Harness catalog order within each partition.
+  for (const favorite of [true, false]) {
+    for (const [id, option] of control.options) {
+      const isFavorite = control.favorites.has(id);
+      syncFavorite(option, isFavorite);
+      if (isFavorite === favorite) control.modelMenu.append(option.row);
+    }
+  }
 }
 
 export function mountRendererModelPicker(
@@ -348,6 +302,7 @@ export function mountRendererModelPicker(
   onSelectThinking: (thinkingOptionId: string) => void,
 ): RendererModelPickerControl {
   ensureRendererTriggerChipStyle(document);
+  ensureModelOptionStyle(document);
 
   const root = document.createElement("div");
   root.setAttribute("data-codexhost-model-control", composerId);
@@ -482,7 +437,14 @@ export function mountRendererModelPicker(
           active.closest('textarea, [contenteditable="true"], [role="textbox"]') !== null));
     if (!movedToComposer) return;
     requestAnimationFrame(() => {
-      if (popoverOpen(modelMenu) && searchInput.isConnected) searchInput.focus();
+      // A legitimate move to a model/favorite button may complete after blur.
+      // Do not steal focus back from that control on the next animation frame.
+      if (
+        popoverOpen(modelMenu) &&
+        searchInput.isConnected &&
+        !modelMenu.contains(document.activeElement)
+      )
+        searchInput.focus();
     });
   };
   searchInput.addEventListener("blur", onSearchBlur);
@@ -511,6 +473,9 @@ export function mountRendererModelPicker(
   const openModelMenu = (standalone = false): void => {
     if ((!standalone && !popoverOpen(menu)) || popoverOpen(modelMenu)) return;
     configuration.close();
+    control.favorites = readModelFavorites(control.harnessId);
+    orderModelFavorites(control);
+    modelMenu.scrollTop = 0;
     modelMenu.showPopover();
     positionModelMenu(control, standalone);
     modelButton.setAttribute("aria-expanded", "true");
@@ -561,12 +526,32 @@ export function mountRendererModelPicker(
     }
   };
   const onModelMenuClick = (event: MouseEvent): void => {
+    const favoriteButton =
+      event.target instanceof Element
+        ? event.target.closest<HTMLButtonElement>("button[data-favorite-model-id]")
+        : null;
+    const favoriteId = favoriteButton?.dataset.favoriteModelId;
+    if (favoriteId) {
+      event.stopPropagation();
+      control.favorites = readModelFavorites(control.harnessId);
+      if (control.favorites.has(favoriteId)) control.favorites.delete(favoriteId);
+      else control.favorites.add(favoriteId);
+      writeModelFavorites(control.harnessId, control.favorites);
+      const focused = document.activeElement;
+      orderModelFavorites(control);
+      // Moving a row can blur its button. Preserve keyboard operation without
+      // scrolling back down to an unfavorited row.
+      if (focused instanceof HTMLElement && modelMenu.contains(focused)) {
+        focused.focus({ preventScroll: true });
+      }
+      modelMenu.scrollTop = 0;
+      return;
+    }
     const target =
       event.target instanceof Element
         ? event.target.closest<HTMLButtonElement>("button[data-model-id]")
         : null;
     if (!target?.dataset.modelId) return;
-    if (target.disabled) return;
     close();
     trigger.focus();
     onSelectModel(target.dataset.modelId);
@@ -628,6 +613,8 @@ export function mountRendererModelPicker(
     searchInput,
     searchHeader,
     searchEmpty,
+    harnessId: "",
+    favorites: new Set(),
     options,
     thinkingOptions,
     configuration,
@@ -715,9 +702,7 @@ function rebuildOptions(control: RendererModelPickerControl, view: RendererModel
   } else control.modelButton.replaceChildren(modelText, modelChevron);
   control.menu.append(control.modelButton);
 
-  const models = view.catalog?.models ?? [];
-  const groups = rendererModelPickerGroups(models);
-  const appendModel = (model: HarnessModel, groupHeading?: HTMLElement): void => {
+  for (const model of view.catalog?.models ?? []) {
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.modelId = model.ref.id;
@@ -730,24 +715,27 @@ function rebuildOptions(control: RendererModelPickerControl, view: RendererModel
     text.title = model.label;
     const check = createCheck();
     button.append(text, check);
+    const row = document.createElement("div");
+    row.setAttribute("role", "presentation");
+    row.dataset.codexhostModelRow = "true";
+    button.style.minWidth = "0";
+    button.style.flex = "1";
+    const favorite = document.createElement("button");
+    favorite.type = "button";
+    favorite.dataset.favoriteModelId = model.ref.id;
+    favorite.append(createModelFavoriteIcon(document));
+    row.append(button, favorite);
     control.options.set(model.ref.id, {
+      row,
+      favorite,
+      label: model.label,
       button,
       check,
       searchText: `${model.label} ${model.ref.id}`.toLowerCase(),
-      ...(typeof model.selectable === "boolean" ? { selectable: model.selectable } : {}),
-      ...(groupHeading ? { groupHeading } : {}),
     });
-    control.modelMenu.append(button);
-  };
-  if (groups.length > 0) {
-    for (const group of groups) {
-      const heading = createModelGroupHeading(group.label);
-      control.modelMenu.append(heading);
-      for (const model of group.models) appendModel(model, heading);
-    }
-  } else {
-    for (const model of models) appendModel(model);
+    control.modelMenu.append(row);
   }
+  orderModelFavorites(control);
   applyModelSearchFilter(control);
   // rebuildOptions replaced the submenu children above, which moves the focused
   // search input out and back in and therefore drops focus; restore it while
@@ -759,8 +747,14 @@ export function renderRendererModelPicker(
   control: RendererModelPickerControl,
   view: RendererModelControlView,
   visible: boolean,
-  harness = "",
+  harnessId = "",
 ): void {
+  if (control.harnessId !== harnessId) {
+    control.close();
+    control.harnessId = harnessId;
+    control.favorites = readModelFavorites(harnessId);
+    delete control.root.dataset.catalogSignature;
+  }
   control.root.style.display = visible ? "inline-flex" : "none";
   control.root.style.alignItems = "center";
   control.root.style.alignSelf = "center";
@@ -774,7 +768,7 @@ export function renderRendererModelPicker(
   const presentation = rendererModelPickerPresentation(view);
   const hiddenModels = readHiddenModels(
     control.root.ownerDocument.defaultView?.localStorage,
-    harness,
+    harnessId,
   );
   const visibleModels = view.catalog?.models.filter(
     (model) => !hiddenModels.has(modelVisibilityId(model.ref)),
@@ -832,7 +826,7 @@ export function renderRendererModelPicker(
     const selected = modelId === view.selected?.id;
     option.button.setAttribute("aria-checked", String(selected));
     option.button.classList.toggle("bg-token-list-hover-background", selected);
-    option.button.disabled = control.trigger.disabled || option.selectable === false;
+    option.button.disabled = control.trigger.disabled;
     option.check.style.visibility = selected ? "visible" : "hidden";
   }
   for (const [thinkingOptionId, option] of control.thinkingOptions) {

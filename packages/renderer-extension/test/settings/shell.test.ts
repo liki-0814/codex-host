@@ -26,7 +26,7 @@ describe("Renderer settings foundation", () => {
       "Models",
       "Session Import",
       "Skills",
-      "Appearance",
+      "General",
       "Updates",
       "About",
     ]);

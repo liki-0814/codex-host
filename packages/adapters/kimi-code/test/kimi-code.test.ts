@@ -70,7 +70,7 @@ describe("Kimi native file history", () => {
         item: {
           type: "fileChange",
           itemId: "t4.files",
-          changes: [{ path: "a.txt", kind: "delete", oldText: "old\n", newText: "" }],
+          changes: [{ path: "a.txt", kind: "delete", unifiedDiff: expect.stringContaining("-old") }],
         },
       },
     ]);

@@ -85,6 +85,25 @@ afterEach(() => {
 });
 
 describe("Cursor native configuration", () => {
+  it("forwards model variants while a Turn is active", async () => {
+    const f = session();
+    const gate = Promise.withResolvers<{ stopReason: "end_turn" }>();
+    f.transport.action = () => gate.promise;
+    const configure = vi.spyOn(f.transport, "configure");
+    try {
+      await f.session.execute(start);
+      const model = cursorModelRef("model[effort=high]");
+      expect(await f.session.execute({ type: "model.select", model })).toMatchObject({ ok: true });
+      expect(configure).toHaveBeenCalledWith("model", "model[effort=high]");
+      expect(
+        await f.session.execute({ ...start, turnId: hostTurnIdSchema.parse("duplicate") }),
+      ).toMatchObject({ error: { code: "sessionBusy" } });
+    } finally {
+      gate.resolve({ stopReason: "end_turn" });
+      await f.session.close();
+      await f.done;
+    }
+  });
   it("starts inspection cache expiry at completion, including slow native startup", async () => {
     const clock = vi.spyOn(Date, "now").mockReturnValue(0),
       gate = Promise.withResolvers<typeof info>();
@@ -94,9 +113,11 @@ describe("Cursor native configuration", () => {
     const adapter = new CursorAdapter();
     try {
       const first = adapter.inspect();
+      const concurrentRefresh = adapter.inspect({ refresh: true });
+      expect(open).toHaveBeenCalledTimes(1);
       clock.mockReturnValue(400_000);
       gate.resolve(info);
-      await first;
+      await Promise.all([first, concurrentRefresh]);
       await adapter.inspect();
       expect(open).toHaveBeenCalledTimes(1);
       clock.mockReturnValue(699_999);

@@ -517,6 +517,7 @@ function synthesizeFileChange(
         path: displayed.path,
         kind: "add",
         unifiedDiff: createTwoFilesPatch(oldHeader, newHeader, "", content, "", "", { context: 3 }),
+        diffScope: "fragment",
       },
     ];
   }
@@ -538,6 +539,7 @@ function synthesizeFileChange(
       unifiedDiff: createTwoFilesPatch(oldHeader, newHeader, oldText, newText, "", "", {
         context: 3,
       }),
+      diffScope: "fragment",
     },
   ];
 }
@@ -951,7 +953,7 @@ class PiHarnessSession implements HarnessSession {
   }
 
   async #selectModel(command: ModelSelectCommand): Promise<HarnessResult<ModelSelectCompleted>> {
-    if (this.#acceptingTurn || this.#active || this.#configuring) {
+    if (this.#acceptingTurn || this.#configuring) {
       return {
         ok: false,
         error: {
@@ -1028,7 +1030,7 @@ class PiHarnessSession implements HarnessSession {
         },
       };
     }
-    if (this.#acceptingTurn || this.#active || this.#configuring) {
+    if (this.#acceptingTurn || this.#configuring) {
       return {
         ok: false,
         error: {
@@ -1801,12 +1803,17 @@ class PiHarnessSession implements HarnessSession {
       try {
         const kind = fileMutatingKind(event.toolName);
         const args = tool.item.type === "toolExecution" ? tool.item.arguments : {};
-        if (kind && synthesizeFileChange(kind, args, this.#cwd)) {
+        if (kind && !patchFromResult(event.result) && synthesizeFileChange(kind, args, this.#cwd)) {
           return;
         }
         const changes = reliableFileChange(event.toolName, args, event.result, this.#cwd);
         if (changes) {
-          const fileItem: HostItem = { type: "fileChange", itemId: this.#newItemId(), changes };
+          const fileItem: HostItem = {
+            type: "fileChange",
+            itemId: this.#newItemId(),
+            sourceItemIds: [tool.item.itemId],
+            changes,
+          };
           this.#event({ type: "item.started", turnId: active.command.turnId, item: fileItem });
           this.#completeItem(active, fileItem, { status: "succeeded" });
         }

@@ -30,12 +30,12 @@
   <a href="https://www.codebuddy.cn/home/"><img alt="CodeBuddy" src="docs/imgs/badge-codebuddy.svg" /></a>
   <a href="https://cursor.com/docs/cli/overview"><img alt="Cursor" src="docs/imgs/badge-cursor.svg" /></a>
   <a href="https://hermes-agent.nousresearch.com/docs"><img alt="Hermes" src="docs/imgs/badge-hermes.svg" /></a>
-  <a href="https://docs.qoder.com/"><img alt="Qoder" src="https://img.shields.io/badge/Qoder-171717" /></a>
+  <a href="https://qoder.com/cli"><img alt="Qoder" src="docs/imgs/badge-qoder.svg" /></a>
   <a href="https://moonshotai.github.io/kimi-code/en/"><img alt="Kimi Code" src="https://img.shields.io/badge/Kimi_Code-171717" /></a>
 </p>
 
 <p align="center">
-  <sub>简体中文 · <a href="docs/README.en.md">English</a> · <a href="docs/README.ko.md">한국어</a></sub>
+  <sub>简体中文 · <a href="docs/project/README.en.md">English</a> · <a href="docs/project/README.ko.md">한국어</a></sub>
 </p>
 </div>
 
@@ -225,7 +225,7 @@ codexhost remote status
 
 然后通过本地 codexhost 启动 Codex Desktop，打开 SSH 工作区，在远程输入框的 Agent/Model 选择器中选择目标 Harness。
 
-[查看 SSH 配置、诊断与卸载文档 →](docs/remote-ssh-host.zh-CN.md)
+[查看 SSH 配置、诊断与卸载文档 →](docs/platforms/remote/remote-ssh-host.zh-CN.md)
 
 #### 2️⃣ Remote Control 远程（实验 · 推荐用于 Windows）
 
@@ -233,7 +233,7 @@ Windows 作为被控 Host 时，可以保留 Codex Desktop 官方配对、账号
 
 这条链路不新增公网服务或 TCP 端口；Harness 凭据仍保留在被控 Windows 上。
 
-[查看 Remote Control 配置、传输边界与诊断文档 →](docs/remote-control-host.zh-CN.md)
+[查看 Remote Control 配置、传输边界与诊断文档 →](docs/platforms/remote/remote-control-host.zh-CN.md)
 
 </details>
 
@@ -267,14 +267,14 @@ CodexHost 按各 Harness 实际提供的接口接入，包括 RPC、SDK、[ACP](
       <sub><strong>欢迎一起贡献~ </strong></sub>
     </td>
     <td align="center">
-      <img width="230" alt="7ba6eda891ba4c8d091f2a71a8b8e81d" src="https://github.com/user-attachments/assets/6bdddc62-596a-477a-9953-936d4752667c" />
+      <img width="230" alt="7ba6eda891ba4c8d091f2a71a8b8e81d" src="https://github.com/user-attachments/assets/0e3c7269-c0c5-4f62-984a-f78b59166d6d" />
     </td>
   </tr>
 </table>
 
 ## 开发
 
-提交 Issue 或 PR 前可阅读[贡献说明](CONTRIBUTING.md)；PR 标题标签、简短 CI 结果和发布前校验见[仓库维护自动化](docs/repository-maintenance.md)。
+提交 Issue 或 PR 前可阅读[贡献说明](CONTRIBUTING.md)；PR 标题标签、简短 CI 结果和发布前校验见[仓库维护自动化](docs/operations/repository-maintenance.md)。
 
 环境要求：官方 Codex Desktop、Node.js 22.19+ 或 24、Rust。
 

@@ -29,6 +29,7 @@ import {
 } from "./session-import-page.js";
 import { createSkillsSettingsPage, type RendererSkillsClient } from "./skills-page.js";
 import { createAppearanceSettingsPage } from "./appearance-page.js";
+import type { LoadedSessionsClient } from "./loaded-sessions-table.js";
 import { createReleaseNotesElement } from "./release-notes.js";
 import { createAccountsSettingsPage, type RendererCodexAccountClient } from "./accounts-page.js";
 
@@ -590,6 +591,7 @@ export function createDefaultRendererSettingsPages(
     Promise.reject(new Error("Imported Thread navigation is unavailable")),
   getModelsClient: () => RendererModelsClient | null = () => null,
   getSkillsClient: () => RendererSkillsClient | null = () => null,
+  getLoadedSessionsClient: () => LoadedSessionsClient | null = () => null,
 ): readonly RendererSettingsPageDefinition[] {
   return Object.freeze([
     createConnectionsSettingsPage(messages, getDiagnostics),
@@ -597,7 +599,7 @@ export function createDefaultRendererSettingsPages(
     createModelsSettingsPage(messages, getModelsClient),
     createSessionImportSettingsPage(messages, getSessionImportClient, openImportedThread),
     createSkillsSettingsPage(messages, getSkillsClient, getDiagnostics),
-    createAppearanceSettingsPage(messages),
+    createAppearanceSettingsPage(messages, getLoadedSessionsClient),
     updatesPage(messages, getUpdateClient),
     aboutPage(messages),
   ]);

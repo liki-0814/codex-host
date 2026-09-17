@@ -12,7 +12,8 @@
     "packages/adapters/cursor-cli",
     "packages/adapters/hermes",
     "packages/adapters/qoder",
-    "packages/adapters/kimi-code"
+    "packages/adapters/kimi-code",
+    "packages/adapters/qoder-cn"
   ],
   "runtimePackages": [
     "@agentclientprotocol/sdk",
@@ -22,6 +23,7 @@
     "@modelcontextprotocol/sdk",
     "@opencode-ai/sdk",
     "@qoder-ai/qoder-agent-sdk",
+    "@qodercn-ai/qodercn-agent-sdk",
     "ajv",
     "ajv-formats",
     "diff",

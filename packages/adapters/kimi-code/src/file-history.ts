@@ -48,8 +48,6 @@ export async function readFileChanges(
       path: change.path,
       kind: change.status === "added" ? "add" : change.status === "deleted" ? "delete" : "update",
       unifiedDiff: createTwoFilesPatch(change.path, change.path, oldText, newText),
-      oldText,
-      newText,
     });
   }
   return changes.length

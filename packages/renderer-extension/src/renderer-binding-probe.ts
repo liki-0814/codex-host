@@ -106,6 +106,7 @@ const externalHarnessIds = {
   hermes: harnessIdSchema.parse("hermes"),
   qoder: harnessIdSchema.parse("qoder"),
   "kimi-code": harnessIdSchema.parse("kimi-code"),
+  "qoder-cn": harnessIdSchema.parse("qoder-cn"),
 } as const;
 
 const externalAgents: readonly ExternalRendererAgent[] = [
@@ -122,6 +123,7 @@ const externalAgents: readonly ExternalRendererAgent[] = [
   "hermes",
   "qoder",
   "kimi-code",
+  "qoder-cn",
 ];
 type HarnessAvailability = Partial<Record<ExternalRendererAgent, RendererAgentAvailability>>;
 type HarnessAvailabilityErrors = Partial<Record<ExternalRendererAgent, CodexhostError | undefined>>;
@@ -506,9 +508,9 @@ export function restoredThreadOwnership(inspection: ThreadInspection): RestoredT
         : {}),
     };
   }
-  if (inspection.harnessId === "qoder") {
+  if (inspection.harnessId === "qoder" || inspection.harnessId === "qoder-cn") {
     const route = decodeHarnessPluginRoute(inspection.transportModelId);
-    if (!route || route.harnessId !== "qoder") {
+    if (!route || route.harnessId !== inspection.harnessId) {
       throw new Error("Qoder Thread reported an incompatible transport Model");
     }
     const model = inspection.effectiveModel ?? route.model;
@@ -518,7 +520,7 @@ export function restoredThreadOwnership(inspection: ThreadInspection): RestoredT
         : (inspection.effectiveThinkingOptionId ?? route.thinkingOptionId);
     const permissionModeId = inspection.effectivePermissionModeId ?? route.permissionModeId;
     return {
-      agent: "qoder",
+      agent: inspection.harnessId,
       ...(model ? { model } : {}),
       ...(thinkingOptionId ? { thinkingOptionId } : {}),
       ...(permissionModeId ? { permissionModeId } : {}),
@@ -693,21 +695,21 @@ export function installRendererBindingProbe(
     threadId: string | null;
     draftId: string | null;
   }): RendererAgent | null => {
-    const mountedHostId = modelControl?.currentHostId?.() ?? "local";
-    if (input.hostId !== mountedHostId) return null;
     for (const mounted of mountedByComposer.values()) {
       const target = mounted.modelTarget;
-      if (target?.[0] === "default" && input.draftId !== null && target[1] === input.draftId) {
-        return controller.get(mounted.composer).agent;
-      }
-      if (
+      const matchesDraft =
+        target?.[0] === "default" && input.draftId !== null && target[1] === input.draftId;
+      const matchesConversation =
         target?.[0] === "conversation" &&
         input.threadId !== null &&
         target[1] === input.threadId &&
-        mounted.ownershipStatus === "ready"
-      ) {
-        return controller.get(mounted.composer).agent;
-      }
+        mounted.ownershipStatus === "ready";
+      if (!matchesDraft && !matchesConversation) continue;
+      // Route validation walks the committed React tree. Only a row matching a
+      // mounted Composer needs it; unrelated sidebar rows cannot use local state.
+      const mountedHostId = modelControl?.currentHostId?.() ?? "local";
+      if (input.hostId !== mountedHostId) return null;
+      return controller.get(mounted.composer).agent;
     }
     return null;
   };
@@ -738,6 +740,7 @@ export function installRendererBindingProbe(
           }),
       };
     },
+    getLoadedSessionsClient: () => modelClientForHost("local"),
     getSessionImportClient: () => {
       const client = modelClientForHost("local");
       const sources = client?.listSessionImportSources;
@@ -781,6 +784,7 @@ export function installRendererBindingProbe(
       hermes: undefined,
       qoder: undefined,
       "kimi-code": undefined,
+      "qoder-cn": undefined,
     },
     webUi: Object.fromEntries(
       externalAgents.map((agent) => [agent, false]),
@@ -2193,8 +2197,7 @@ export function installRendererBindingProbe(
     if (!control || !hostId) return null;
     const selected = control.clientForHost?.(hostId);
     if (selected) return selected;
-    if (!control.currentHostId) return hostId === "local" ? control : null;
-    const currentHostId = control.currentHostId();
+    const currentHostId = control.currentHostId?.() ?? "local";
     return currentHostId === hostId ? control : null;
   }
 

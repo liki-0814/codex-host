@@ -1,5 +1,18 @@
 import { z } from "zod";
 import { WORKSPACE_CONTRACT_VERSION } from "./version.js";
+export {
+  IDLE_RELEASE_SETTINGS_METHOD,
+  IDLE_RELEASE_TIMEOUT_MINUTES_MAX,
+  IDLE_RELEASE_TIMEOUT_MINUTES_MIN,
+  DEFAULT_IDLE_RELEASE_SETTINGS,
+  idleReleaseSettingsSchema,
+  type IdleReleaseSettings,
+} from "./idle-release.js";
+export {
+  LOADED_SESSIONS_METHOD,
+  loadedSessionsSchema,
+  type LoadedSession,
+} from "./loaded-sessions.js";
 
 export { DELEGATION_CREATED_METHOD, delegationCreatedSchema } from "./delegation-created.js";
 export type { DelegationCreated } from "./delegation-created.js";
@@ -144,7 +157,6 @@ export {
   harnessConfigurationStateSchema,
   harnessInspectParamsSchema,
   harnessInspectionSchema,
-  harnessModelGroupSchema,
   harnessModelCatalogSchema,
   harnessModelRefIdSchema,
   harnessModelRefSchema,
@@ -171,7 +183,6 @@ export type {
   HarnessConfigurationState,
   HarnessInspectParams,
   HarnessInspection,
-  HarnessModelGroup,
   HarnessModel,
   HarnessModelCatalog,
   HarnessModelRef,

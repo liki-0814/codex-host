@@ -206,7 +206,6 @@ export function installRendererExternalSteering(
   };
 
   const steer: RendererMethod = async function (...args) {
-    refreshRequestBridge?.();
     const [
       threadId,
       input,

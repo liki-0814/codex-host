@@ -1,4 +1,5 @@
 import type { RendererModelsClient } from "./settings/models-page.js";
+import type { LoadedSessionsClient } from "./settings/loaded-sessions-table.js";
 import { readCodexLocaleSettings, type CodexLocaleSettings } from "./codex-locale-adapter.js";
 import {
   rendererSettingsMessages,
@@ -32,6 +33,7 @@ export interface RendererSettingsLifecycleOptions {
   getAccountClient?(): RendererCodexAccountClient | null;
   getSessionImportClient?(): RendererSessionImportClient | null;
   getSkillsClient?(): RendererSkillsClient | null;
+  getLoadedSessionsClient?(): LoadedSessionsClient | null;
   openImportedThread?: RendererImportedThreadOpener;
   onLocaleChange?(locale: RendererSettingsLocale): void;
 }
@@ -80,6 +82,7 @@ export function installRendererSettingsLifecycle(
       },
       options.getModelsClient ?? (() => null),
       options.getSkillsClient ?? (() => null),
+      options.getLoadedSessionsClient ?? (() => null),
     );
     const nextShell = installRendererSettingsShell(definitions, messages, ownerWindow.document);
     const nextTrigger = installRendererSettingsHeaderTrigger({

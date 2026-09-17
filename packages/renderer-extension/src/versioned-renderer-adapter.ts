@@ -1,4 +1,5 @@
 import { committedReactAncestors } from "@codexhost/desktop-control/renderer-bindings";
+import { installIdleReleasePreferenceSync } from "./renderer-idle-release-preference.js";
 import {
   encodeHarnessPluginRoute,
   harnessIdSchema,
@@ -155,7 +156,6 @@ declare global {
 }
 
 const KIRO_CLI_HARNESS_ID = harnessIdSchema.parse("kiro-cli");
-const QODER_HARNESS_ID = harnessIdSchema.parse("qoder");
 
 function transportModelIdForAgent(agent: RendererAgent): string | null {
   if (agent === "pi") return PI_TRANSPORT_MODEL_ID;
@@ -166,8 +166,7 @@ function transportModelIdForAgent(agent: RendererAgent): string | null {
   if (agent === "omp") return OMP_TRANSPORT_MODEL_ID;
   if (agent === "antigravity") return ANTIGRAVITY_TRANSPORT_MODEL_ID;
   if (agent === "kiro-cli") return encodeHarnessPluginRoute({ harnessId: KIRO_CLI_HARNESS_ID });
-  if (agent === "qoder") return encodeHarnessPluginRoute({ harnessId: QODER_HARNESS_ID });
-  if (agent === "kimi-code")
+  if (agent === "codebuddy" || agent === "cursor-cli" || agent === "qoder" || agent === "qoder-cn" || agent === "kimi-code")
     return encodeHarnessPluginRoute({ harnessId: harnessIdSchema.parse(agent) });
   return null;
 }
@@ -994,9 +993,9 @@ export function modelSelectionForAgent(
                       })
                     : agent === "hermes"
                       ? hermesTransportModelId(model, permissionModeId)
-                      : agent === "qoder"
+                      : agent === "qoder" || agent === "qoder-cn"
                         ? encodeHarnessPluginRoute({
-                            harnessId: QODER_HARNESS_ID,
+                            harnessId: harnessIdSchema.parse(agent),
                             ...(model ? { model } : {}),
                             ...(thinkingOptionId ? { thinkingOptionId } : {}),
                             ...(permissionModeId ? { permissionModeId } : {}),
@@ -1039,6 +1038,7 @@ export function installCurrentRendererAdapter(
   };
 
   const usageSubscription = createThreadUsageSubscriptionRelay();
+  const idleReleaseSync = installIdleReleasePreferenceSync(window);
   const requestRouteResolver = createRendererRequestRouteResolver(
     () => window.__codexhostDraftPrewarmPolicyV1,
     () => findActivePrewarmTargets(document),
@@ -1059,7 +1059,13 @@ export function installCurrentRendererAdapter(
     const target = targets[0];
     if (targets.length !== 1 || !target) return null;
     const cached = clientsByTarget.get(target);
-    if (cached?.policy === policy && cached.requestClient === target.requestClient)
+    // A policy-less auxiliary lookup must not replace the active route's client.
+    // Explicit policy changes and request-client replacement still invalidate it.
+    if (
+      cached &&
+      (policy === null || cached.policy === policy) &&
+      cached.requestClient === target.requestClient
+    )
       return cached.client;
     const client = createRendererModelClient([target]);
     if (client) {
@@ -1099,6 +1105,14 @@ export function installCurrentRendererAdapter(
   const syncActiveRoute = (route: RendererRequestRoute | null): RendererModelClient | null => {
     const policy = route?.policy ?? null;
     const client = route ? modelClientForTargets(route.targets, route.policy) : null;
+    usageSubscription.connect(client);
+    const localClient =
+      policy?.hostId === "local"
+        ? client
+        : modelClientForTargets(
+            rendererRequestTargetsForHost(findActivePrewarmTargets(document), "local") ?? [],
+          );
+    idleReleaseSync.connect(localClient);
     if (activeRoutePolicy === policy && activeRouteClient === client) return client;
     activeRoutePolicy = policy;
     activeRouteClient = client;
@@ -1112,7 +1126,6 @@ export function installCurrentRendererAdapter(
   const currentModelClient = (): RendererModelClient => {
     const client = currentRequestRoute() ? activeRouteClient : null;
     if (!client) throw new Error("Renderer Model request manager is unavailable");
-    usageSubscription.connect(client);
     return client;
   };
   const modelControl: RendererModelClient = Object.freeze({
@@ -1344,6 +1357,7 @@ export function installCurrentRendererAdapter(
         () => forkControl.dispose(),
         ...turnControlCleanups,
         () => usageSubscription.dispose(),
+        () => idleReleaseSync.dispose(),
       ];
       for (const cleanup of cleanups) {
         try {

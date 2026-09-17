@@ -26,6 +26,7 @@ export const RENDERER_AGENT_LABELS: Record<RendererAgent, string> = {
   hermes: "Hermes",
   qoder: "Qoder",
   "kimi-code": "Kimi Code",
+  "qoder-cn": "Qoder CN",
 };
 
 const PI_PATHS = [
@@ -159,7 +160,7 @@ export function createRendererAgentIcon(
     image.style.flex = "none";
     return image;
   }
-  if (agent === "qoder" || agent === "kimi-code") {
+  if (agent === "qoder" || agent === "qoder-cn" || agent === "kimi-code") {
     const image = ownerDocument.createElement("img");
     image.src = agent === "kimi-code" ? kimiAgentIconUrl : qoderAgentIconUrl;
     image.alt = "";
