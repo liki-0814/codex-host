@@ -9,7 +9,8 @@ import {
   type HarnessResult,
   type OpenSessionInput,
 } from "@codexhost/harness-adapter";
-import { harnessAccountSnapshotSchema, type HarnessInspection } from "@codexhost/shared-contracts";
+import type { HarnessInspection } from "@codexhost/shared-contracts";
+import { fetchKimiAccount } from "./account-identity.js";
 import { KimiServer, KimiError, kimiError, type KimiServerOptions } from "./server.js";
 import {
   kimiId,
@@ -201,55 +202,10 @@ export class KimiCodeAdapter implements HarnessAdapter {
     }
   }
   async inspectAccount() {
-    try {
-      const server = await this.metadata();
-      const window = z.object({
-        window: z.object({ duration: z.number().positive(), unit: z.string() }),
-        used: z.number().nonnegative(),
-        limit: z.number().positive(),
-        reset_at: z.string().optional(),
-      });
-      const [usage, user] = await Promise.all([
-        server.request(
-          "/oauth/usage",
-          z.object({ kind: z.literal("ok"), summary: window, limits: z.array(window) }),
-        ),
-        server.request(
-          "/oauth/userinfo",
-          z.object({
-            kind: z.literal("ok"),
-            userInfo: z.object({
-              nickname: z.string().optional(),
-              userLevelName: z.string().optional(),
-            }),
-          }),
-        ),
-      ]);
-      const label = (w: z.infer<typeof window>["window"]): string =>
-        `${w.duration} ${{ hour: "小时", day: "天", week: "周", month: "月" }[w.unit] ?? w.unit}额度`;
-      const percent = (w: z.infer<typeof window>) => Math.min(100, (w.used / w.limit) * 100);
-      return harnessAccountSnapshotSchema.parse({
-        label: user.userInfo.nickname || "Kimi Code",
-        ...(user.userInfo.userLevelName ? { plan: user.userInfo.userLevelName } : {}),
-        credits: {
-          usedPercent: percent(usage.summary),
-          periodType: "unknown",
-          label: label(usage.summary.window),
-          ...(usage.summary.reset_at ? { resetsAt: usage.summary.reset_at } : {}),
-          ...(usage.limits.length
-            ? {
-                productUsage: usage.limits.map((w) => ({
-                  product: label(w.window),
-                  usagePercent: percent(w),
-                  ...(w.reset_at ? { resetsAt: w.reset_at } : {}),
-                })),
-              }
-            : {}),
-        },
-      });
-    } catch {
-      return null;
-    }
+    if (this.#closed) return null;
+    return fetchKimiAccount({
+      ...(this.options.environment ? { environment: this.options.environment } : {}),
+    });
   }
   async close(): Promise<void> {
     if (this.#closed) return;
