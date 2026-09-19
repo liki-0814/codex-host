@@ -1,25 +1,52 @@
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { commandInvocation, resolveHarnessExecutable } from "@codexhost/harness-discovery";
+import {
+  commandInvocation,
+  resolveHarnessExecutable,
+  type HarnessDiscoverySpec,
+  type HarnessResolution,
+} from "@codexhost/harness-discovery";
 
-export function cursorInvocation(environment: NodeJS.ProcessEnv, command?: string, force = false) {
-  const args = [...(force ? ["--force"] : []), "acp"];
-  const resolution = resolveHarnessExecutable(
-    {
-      id: "cursor-cli",
-      command: "cursor-agent",
-      commandEnvironmentVariable: "CODEXHOST_CURSOR_COMMAND",
-      installRoots: {
-        posix: ["~/.local/bin", "/usr/local/bin", "/opt/homebrew/bin"],
-        windows: ["${LOCALAPPDATA}/cursor-agent"],
-      },
+const PINNED_VERSION_AGENT =
+  /[/\\]cursor-agent[/\\]versions[/\\][^/\\]+[/\\]cursor-agent(?:\.exe)?$/iu;
+
+function cursorDiscoverySpec(skipPinnedVersions: boolean): HarnessDiscoverySpec {
+  return {
+    id: "cursor-cli",
+    command: "cursor-agent",
+    commandEnvironmentVariable: "CODEXHOST_CURSOR_COMMAND",
+    installRoots: {
+      posix: ["~/.local/bin", "/usr/local/bin", "/opt/homebrew/bin"],
+      windows: ["${LOCALAPPDATA}/cursor-agent"],
     },
-    { environment, ...(command ? { command } : {}) },
-  );
-  if (!resolution)
+    ...(skipPinnedVersions
+      ? {
+          runnableCandidate: (candidate) =>
+            PINNED_VERSION_AGENT.test(candidate) ? undefined : candidate,
+        }
+      : {}),
+  };
+}
+
+/** Prefer the rolling `cursor-agent` shim so `update` is not checked against a stale versions/ binary. */
+function resolveCursorExecutable(
+  environment: NodeJS.ProcessEnv,
+  command?: string,
+): HarnessResolution {
+  const input = { environment, ...(command ? { command } : {}) };
+  const pinned = resolveHarnessExecutable(cursorDiscoverySpec(false), input);
+  if (!pinned)
     throw new Error(
       "Cursor CLI is not installed; install cursor-agent or set CODEXHOST_CURSOR_COMMAND",
     );
+  const explicit = command ?? environment.CODEXHOST_CURSOR_COMMAND;
+  if (explicit || !PINNED_VERSION_AGENT.test(pinned.executable)) return pinned;
+  return resolveHarnessExecutable(cursorDiscoverySpec(true), input) ?? pinned;
+}
+
+export function cursorInvocation(environment: NodeJS.ProcessEnv, command?: string, force = false) {
+  const args = [...(force ? ["--force"] : []), "acp"];
+  const resolution = resolveCursorExecutable(environment, command);
   // Launch the official Windows bundle directly, avoiding an intermediate cmd/PowerShell
   // owner whose death could leave the ACP process alive. No user command is interpreted.
   if (process.platform === "win32" && /\.(cmd|ps1)$/iu.test(resolution.executable)) {
