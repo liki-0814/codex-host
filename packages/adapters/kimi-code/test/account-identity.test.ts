@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  KIMI_OAUTH_TOKEN_ENDPOINT,
   KIMI_USAGES_ENDPOINT,
   fetchKimiAccount,
   projectKimiUsages,
@@ -92,5 +93,89 @@ describe("Kimi coding-plan usages", () => {
         fetch: async () => new Response("unauthorized", { status: 401 }),
       }),
     ).resolves.toBeNull();
+  });
+
+  it("refreshes an expired native token before reading usages", async () => {
+    const writeAuthFile = vi.fn(async () => undefined);
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url === KIMI_OAUTH_TOKEN_ENDPOINT) {
+        return new Response(
+          JSON.stringify({ access_token: "fresh-access", refresh_token: "rotated", expires_in: 900 }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify(usages), {
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    await expect(
+      fetchKimiAccount({
+        environment: {},
+        now: 1_700_000_000_000,
+        readAuthFile: async () =>
+          JSON.stringify({
+            access_token: "stale-access",
+            refresh_token: "refresh-secret",
+            expires_at: 1_699_000_000,
+          }),
+        writeAuthFile,
+        fetch: fetchImpl,
+      }),
+    ).resolves.toMatchObject({ label: "li", plan: "PRO" });
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      KIMI_OAUTH_TOKEN_ENDPOINT,
+      KIMI_USAGES_ENDPOINT,
+    ]);
+    expect(String(fetchImpl.mock.calls[1]?.[1]?.headers?.Authorization)).toBe("Bearer fresh-access");
+    const persisted = JSON.parse(writeAuthFile.mock.calls[0]?.[1] ?? "{}") as {
+      access_token?: string;
+    };
+    expect(persisted.access_token).toBe("fresh-access");
+    expect(JSON.stringify({ label: "li" })).not.toContain("fresh-access");
+  });
+
+  it("retries usages after a 401 once the native token is refreshed", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url === KIMI_OAUTH_TOKEN_ENDPOINT) {
+        return new Response(JSON.stringify({ access_token: "fresh-access", expires_in: 900 }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (fetchImpl.mock.calls.filter(([called]) => called === KIMI_USAGES_ENDPOINT).length === 1) {
+        return new Response("unauthorized", { status: 401 });
+      }
+      return new Response(JSON.stringify(usages), {
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    await expect(
+      fetchKimiAccount({
+        environment: {},
+        readAuthFile: async () =>
+          JSON.stringify({ access_token: "stale-access", refresh_token: "refresh-secret" }),
+        writeAuthFile: async () => undefined,
+        fetch: fetchImpl,
+      }),
+    ).resolves.toMatchObject({ label: "li" });
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      KIMI_USAGES_ENDPOINT,
+      KIMI_OAUTH_TOKEN_ENDPOINT,
+      KIMI_USAGES_ENDPOINT,
+    ]);
+  });
+
+  it("does not refresh an environment API key", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify(usages), { headers: { "Content-Type": "application/json" } }),
+    );
+    await expect(
+      fetchKimiAccount({
+        environment: { KIMI_CODE_API_KEY: "env-secret" },
+        fetch: fetchImpl,
+      }),
+    ).resolves.toMatchObject({ label: "li" });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe(KIMI_USAGES_ENDPOINT);
   });
 });
