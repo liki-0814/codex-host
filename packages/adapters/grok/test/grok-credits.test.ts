@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  GROK_CREDITS_ENDPOINT,
+  GROK_OAUTH_TOKEN_ENDPOINT,
   fetchGrokAccount,
   fetchGrokCredits,
   parseGrokCreditsResponse,
@@ -86,6 +88,7 @@ describe("Grok account discovery", () => {
   it("does not turn network errors or invalid JSON into zero usage", async () => {
     const input = fixture();
     input.fetch.mockRejectedValueOnce(new Error("network unavailable"));
+    input.fetch.mockRejectedValueOnce(new Error("network unavailable"));
     expect(await fetchGrokAccount(input)).toBeNull();
     input.fetch.mockResolvedValueOnce(new Response("not json"));
     expect(await fetchGrokAccount(input)).toBeNull();
@@ -119,6 +122,98 @@ describe("Grok account discovery", () => {
     expect(
       parseGrokCreditsResponse({ config: { billingPeriodEnd: "2026-09-02T00:00:00Z" } }),
     ).toBeNull();
+  });
+
+  it("refreshes an expired native token before reading credits", async () => {
+    const writeAuthFile = vi.fn(async () => undefined);
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url === GROK_OAUTH_TOKEN_ENDPOINT) {
+        return new Response(
+          JSON.stringify({ access_token: "fresh-access", refresh_token: "rotated", expires_in: 3600 }),
+        );
+      }
+      return new Response(
+        JSON.stringify({ config: { creditUsagePercent: 10, currentPeriod: { type: "WEEKLY" } } }),
+      );
+    });
+    await expect(
+      fetchGrokAccount({
+        environment: {},
+        now: new Date("2026-09-03T00:00:00Z"),
+        readAuthFile: async () =>
+          JSON.stringify({
+            "https://auth.x.ai::cli": {
+              key: "stale-access",
+              refresh_token: "refresh-secret",
+              expires_at: "2026-09-02T00:00:00Z",
+              email: "user@example.com",
+            },
+          }),
+        writeAuthFile,
+        fetch: fetchImpl,
+      }),
+    ).resolves.toMatchObject({
+      email: "user@example.com",
+      credits: { usedPercent: 10, periodType: "weekly" },
+    });
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      GROK_OAUTH_TOKEN_ENDPOINT,
+      GROK_CREDITS_ENDPOINT,
+    ]);
+    const persisted = JSON.parse(writeAuthFile.mock.calls[0]?.[1] ?? "{}") as {
+      "https://auth.x.ai::cli"?: { key?: string };
+    };
+    expect(persisted["https://auth.x.ai::cli"]?.key).toBe("fresh-access");
+  });
+
+  it("retries credits after a 401 once the native token is refreshed", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url === GROK_OAUTH_TOKEN_ENDPOINT) {
+        return new Response(JSON.stringify({ access_token: "fresh-access", expires_in: 3600 }));
+      }
+      if (fetchImpl.mock.calls.filter(([called]) => called === GROK_CREDITS_ENDPOINT).length === 1) {
+        return new Response("unauthorized", { status: 401 });
+      }
+      return new Response(
+        JSON.stringify({ config: { creditUsagePercent: 4, currentPeriod: { type: "WEEKLY" } } }),
+      );
+    });
+    await expect(
+      fetchGrokAccount({
+        environment: {},
+        now,
+        readAuthFile: async () =>
+          JSON.stringify({
+            "https://auth.x.ai::cli": {
+              key: "stale-access",
+              refresh_token: "refresh-secret",
+              expires_at: "2026-09-02T00:00:00Z",
+            },
+          }),
+        writeAuthFile: async () => undefined,
+        fetch: fetchImpl,
+      }),
+    ).resolves.toMatchObject({ credits: { usedPercent: 4 } });
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      GROK_CREDITS_ENDPOINT,
+      GROK_OAUTH_TOKEN_ENDPOINT,
+      GROK_CREDITS_ENDPOINT,
+    ]);
+  });
+
+  it("retries a cold credits fetch once", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ config: { creditUsagePercent: 0, currentPeriod: { type: "WEEKLY" } } }),
+        ),
+      );
+    await expect(fetchGrokAccount({ ...fixture(), fetch: fetchImpl })).resolves.toMatchObject({
+      credits: { usedPercent: 0 },
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });
 
