@@ -104,7 +104,21 @@ export function createInstallationManager(options: {
 }
 
 export async function fetchInstallationText(url: string): Promise<string> {
-  const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
-  if (!response.ok) throw new Error("Could not check the latest Harness version");
-  return response.text();
+  const request = async () => {
+    const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) throw new Error("Could not check the latest Harness version");
+    return response.text();
+  };
+  try {
+    return await request();
+  } catch (error) {
+    if (error instanceof Error && error.message === "Could not check the latest Harness version") {
+      throw error;
+    }
+    try {
+      return await request();
+    } catch {
+      throw new Error("Could not check the latest Harness version");
+    }
+  }
 }

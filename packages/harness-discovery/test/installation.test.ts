@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createInstallationManager,
+  fetchInstallationText,
   newerInstallationVersion,
   runInstallationCommand,
 } from "../src/installation.js";
@@ -67,5 +68,15 @@ describe("native installation maintenance", () => {
         process.env,
       ),
     ).rejects.not.toThrow("secret");
+  });
+  it("retries a cold latest-version fetch once", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(new Response("1.2.3"));
+    vi.stubGlobal("fetch", fetchImpl);
+    await expect(fetchInstallationText("https://example.test/latest")).resolves.toBe("1.2.3");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
   });
 });
