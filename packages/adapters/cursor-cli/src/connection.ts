@@ -123,7 +123,11 @@ export class CursorConnection {
   }
 
   async #start(): Promise<void> {
-    const invocation = cursorInvocation(this.environment, this.command, this.key.force);
+    const invocation = cursorInvocation(
+      this.environment,
+      this.command,
+      this.key.force ? ["--force", "acp"] : ["acp"],
+    );
     const child = spawn(invocation.command, invocation.arguments, {
       cwd: this.key.cwd,
       env: this.environment,

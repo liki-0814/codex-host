@@ -56,7 +56,7 @@ describe("Kimi coding-plan usages", () => {
 
   it("reads quota from the coding usages API instead of starting kimi web", async () => {
     const fetchImpl = vi.fn(
-      async () =>
+      async (_url: string) =>
         new Response(JSON.stringify(usages), { headers: { "Content-Type": "application/json" } }),
     );
     await expect(
@@ -96,8 +96,8 @@ describe("Kimi coding-plan usages", () => {
   });
 
   it("refreshes an expired native token before reading usages", async () => {
-    const writeAuthFile = vi.fn(async () => undefined);
-    const fetchImpl = vi.fn(async (url: string) => {
+    const writeAuthFile = vi.fn(async (_filePath: string, _contents: string) => undefined);
+    const fetchImpl = vi.fn(async (url: string, _init?: RequestInit) => {
       if (url === KIMI_OAUTH_TOKEN_ENDPOINT) {
         return new Response(
           JSON.stringify({ access_token: "fresh-access", refresh_token: "rotated", expires_in: 900 }),
@@ -126,7 +126,14 @@ describe("Kimi coding-plan usages", () => {
       KIMI_OAUTH_TOKEN_ENDPOINT,
       KIMI_USAGES_ENDPOINT,
     ]);
-    expect(String(fetchImpl.mock.calls[1]?.[1]?.headers?.Authorization)).toBe("Bearer fresh-access");
+    const headers = fetchImpl.mock.calls[1]?.[1]?.headers;
+    const authorization =
+      headers instanceof Headers
+        ? headers.get("Authorization")
+        : headers && !Array.isArray(headers)
+          ? headers.Authorization
+          : undefined;
+    expect(String(authorization)).toBe("Bearer fresh-access");
     const persisted = JSON.parse(writeAuthFile.mock.calls[0]?.[1] ?? "{}") as {
       access_token?: string;
     };
@@ -135,7 +142,7 @@ describe("Kimi coding-plan usages", () => {
   });
 
   it("retries usages after a 401 once the native token is refreshed", async () => {
-    const fetchImpl = vi.fn(async (url: string) => {
+    const fetchImpl = vi.fn(async (url: string, _init?: RequestInit) => {
       if (url === KIMI_OAUTH_TOKEN_ENDPOINT) {
         return new Response(JSON.stringify({ access_token: "fresh-access", expires_in: 900 }), {
           headers: { "Content-Type": "application/json" },
@@ -166,7 +173,7 @@ describe("Kimi coding-plan usages", () => {
 
   it("does not refresh an environment API key", async () => {
     const fetchImpl = vi.fn(
-      async () =>
+      async (_url: string) =>
         new Response(JSON.stringify(usages), { headers: { "Content-Type": "application/json" } }),
     );
     await expect(

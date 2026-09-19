@@ -44,8 +44,11 @@ function resolveCursorExecutable(
   return resolveHarnessExecutable(cursorDiscoverySpec(true), input) ?? pinned;
 }
 
-export function cursorInvocation(environment: NodeJS.ProcessEnv, command?: string, force = false) {
-  const args = [...(force ? ["--force"] : []), "acp"];
+export function cursorInvocation(
+  environment: NodeJS.ProcessEnv,
+  command?: string,
+  args: string[] = ["acp"],
+) {
   const resolution = resolveCursorExecutable(environment, command);
   // Launch the official Windows bundle directly, avoiding an intermediate cmd/PowerShell
   // owner whose death could leave the ACP process alive. No user command is interpreted.

@@ -125,7 +125,7 @@ describe("Grok account discovery", () => {
   });
 
   it("refreshes an expired native token before reading credits", async () => {
-    const writeAuthFile = vi.fn(async () => undefined);
+    const writeAuthFile = vi.fn(async (_filePath: string, _contents: string) => undefined);
     const fetchImpl = vi.fn(async (url: string) => {
       if (url === GROK_OAUTH_TOKEN_ENDPOINT) {
         return new Response(

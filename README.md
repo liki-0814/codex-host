@@ -28,6 +28,7 @@
   <a href="https://antigravity.google/product/antigravity-cli"><img alt="AGY" src="docs/imgs/badge-agy.svg" /></a>
   <a href="https://kiro.dev/docs/cli/"><img alt="Kiro CLI" src="docs/imgs/badge-kiro.svg" /></a>
   <a href="https://www.codebuddy.cn/home/"><img alt="CodeBuddy" src="docs/imgs/badge-codebuddy.svg" /></a>
+  <a href="https://www.workbuddy.ai/docs/workbuddy/Quickstart"><img alt="WorkBuddy" src="docs/imgs/badge-workbuddy.svg" /></a>
   <a href="https://cursor.com/docs/cli/overview"><img alt="Cursor" src="docs/imgs/badge-cursor.svg" /></a>
   <a href="https://hermes-agent.nousresearch.com/docs"><img alt="Hermes" src="docs/imgs/badge-hermes.svg" /></a>
   <a href="https://qoder.com/cli"><img alt="Qoder" src="docs/imgs/badge-qoder.svg" /></a>
@@ -149,38 +150,33 @@ Kimi Code 适配新版 **Server API（backend v2）**，已在 0.42.x 与 0.43.x
 
 ## 功能状态
 
-| 能力 | <a href="https://openai.com/codex/"><img alt="Codex" src="docs/imgs/harness-icon-codex.svg" width="24" height="24" /></a> | <a href="https://pi.dev/"><img alt="Pi" src="https://img.shields.io/badge/-000000?logo=pi&logoColor=white" width="24" height="24" /></a> | <a href="https://github.com/can1357/oh-my-pi"><img alt="Oh My Pi" src="docs/imgs/harness-icon-omp-v5.svg" width="24" height="24" /></a> | <a href="https://code.claude.com/docs/en/quickstart"><img alt="Claude Code" src="https://img.shields.io/badge/-D97757?logo=claudecode&logoColor=white" width="24" height="24" /></a> | <a href="https://opencode.ai/docs/"><img alt="OpenCode" src="docs/imgs/harness-icon-opencode.svg" width="24" height="24" /></a> | <a href="https://grok.com/"><img alt="Grok" src="https://img.shields.io/badge/-000000?logo=x&logoColor=white" width="24" height="24" /></a> | <a href="https://github.com/deepseek-ai/deepseek-harness"><img alt="DeepSeek Harness" src="https://img.shields.io/badge/-4D6BFE?logo=deepseek&logoColor=white" width="24" height="24" /></a> | <a href="https://antigravity.google/product/antigravity-cli"><img alt="AGY" src="docs/imgs/harness-icon-agy.svg" width="24" height="24" /></a> | <a href="https://www.codebuddy.cn/home/"><img alt="CodeBuddy" src="docs/imgs/harness-icon-codebuddy.svg" width="24" height="24" /></a> | <a href="https://cursor.com/docs/cli/overview"><img alt="Cursor" src="docs/imgs/harness-icon-cursor.svg" width="24" height="24" /></a> | <a href="https://hermes-agent.nousresearch.com/docs"><img alt="Hermes" src="docs/imgs/harness-icon-hermes.svg" width="24" height="24" /></a> | <a href="https://docs.qoder.com/"><img alt="Qoder" src="packages/adapters/qoder/assets/icon.svg" width="24" height="24" /></a> | <a href="https://moonshotai.github.io/kimi-code/en/"><img alt="Kimi Code" src="packages/adapters/kimi-code/assets/icon.svg" width="24" height="24" /></a> |
+| 能力 | <a href="https://pi.dev/"><img alt="Pi" src="https://img.shields.io/badge/-000000?logo=pi&logoColor=white" /></a> | <a href="https://github.com/can1357/oh-my-pi"><img alt="Oh My Pi" src="docs/imgs/harness-icon-omp-v5.svg" /></a> | <a href="https://code.claude.com/docs/en/quickstart"><img alt="Claude Code" src="https://img.shields.io/badge/-D97757?logo=claudecode&logoColor=white" /></a> | <a href="https://opencode.ai/docs/"><img alt="OpenCode" src="docs/imgs/harness-icon-opencode.svg" /></a> | <a href="https://grok.com/"><img alt="Grok" src="https://img.shields.io/badge/-000000?logo=x&logoColor=white" /></a> | <a href="https://github.com/deepseek-ai/deepseek-harness"><img alt="DeepSeek Harness" src="https://img.shields.io/badge/-4D6BFE?logo=deepseek&logoColor=white" /></a> | <a href="https://antigravity.google/product/antigravity-cli"><img alt="AGY" src="docs/imgs/harness-icon-agy.svg" /></a> | <a href="https://www.codebuddy.cn/home/"><img alt="CodeBuddy" src="docs/imgs/harness-icon-codebuddy.svg" width="24" height="24" /></a> | <a href="https://www.workbuddy.ai/docs/workbuddy/Quickstart"><img alt="WorkBuddy" src="packages/adapters/workbuddy/assets/icon.svg" width="24" height="24" /></a> | <a href="https://cursor.com/docs/cli/overview"><img alt="Cursor" src="docs/imgs/harness-icon-cursor.svg" /></a> | <a href="https://hermes-agent.nousresearch.com/docs"><img alt="Hermes" src="docs/imgs/harness-icon-hermes.svg" /></a> | <a href="https://qoder.com/cli"><img alt="Qoder" src="packages/adapters/qoder/assets/icon.svg" width="28" height="28" /></a> | <a href="https://moonshotai.github.io/kimi-code/en/"><img alt="Kimi Code" src="packages/adapters/kimi-code/assets/icon.svg" width="24" height="24" /></a> |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| 流式回复 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 工具状态 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Edit Diff | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅⁶ |
-| 提问 / 取消 | 原生 | ✅ | — / ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — / ✅ | ✅ | ✅ |
-| Model / Thinking 选择 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅¹ | ✅ / — | ✅ | ✅¹ |
-| 工具审批 | 原生 | ✅ | — | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 权限模式 | 原生 | ✅⁷ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Agent 间任务协作 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅⁸ | ✅ | ✅ | ✅² |
-| Usage | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅³ |
-| Fork | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | ✅ | ✅⁴ |
-| 上下文压缩 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | — | ✅ | ✅ |
-| 斜杠命令 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅⁸ | — | ✅⁵ | ✅⁵ |
-| 修订上一条消息 | 原生 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | ✅ | ✅⁴ |
+| 流式回复 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 工具状态 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Edit Diff | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅¹ |
+| 提问 / 取消 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Model / Thinking 选择 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅² |
+| 工具审批 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 权限模式 | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Agent 间任务协作 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅³ |
+| Usage | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅⁴ |
+| Fork | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅⁵ |
+| 上下文压缩 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | ✅ | ✅ | ✅ |
+| 斜杠命令 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅⁶ |
+| 修订上一条消息 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅⁵ |
 
-¹ Kimi 的思考强度通过 **Effort** 控制，只显示一套选择器；可用值来自当前模型。Highspeed、256k 是原生模型选项，不伪造独立 Fast 或上下文开关。Cursor 通过原生 ACP `configOptions` 提供模型参数，以实际返回的选项为准。
+¹ Kimi Edit Diff 使用原生按轮次保存的文件历史，支持文本文件新增、修改和删除；二进制、原生超限或未记录的内容不生成猜测 Diff。
 
-² Kimi 支持原生子 Agent 的状态、结果和历史读取。跨 Harness 委派使用公共 Host 路径，已实测 Kimi → Qoder → Kimi 及同一 Kimi 子会话续发；与原生子 Agent 是不同能力。
+² Kimi 的思考强度通过 **Effort** 控制，只显示一套选择器；可用值来自当前模型。Highspeed、256k 是原生模型选项，不伪造独立 Fast 或上下文开关。
 
-³ Kimi 会话 Usage 展示原生输入、输出、缓存 Token 和上下文用量；账号页显示原生订阅额度和刷新时间，不将订阅额度换算成会话花费。
+³ Kimi 支持原生子 Agent 的状态、结果和历史读取。跨 Harness 委派使用公共 Host 路径；与原生子 Agent 是不同能力。
 
-⁴ Kimi Fork 保留截至指定轮次（含该轮次）的完整前缀；修订上一条消息先派生副本，再撤回副本的最后一轮。两者不回滚工作区文件；不能跨工作目录，原生压缩边界之前不可撤回时会明确失败。
+⁴ Kimi 会话 Usage 展示原生输入、输出、缓存 Token 和上下文用量；账号页显示原生订阅额度和刷新时间，不将订阅额度换算成会话花费。
 
-⁵ Kimi 接入 `/compact`；Qoder 仅开放当前原生 Headless 接口可执行的命令，不把 TUI 专用命令标成可用。
+⁵ Kimi Fork 保留截至指定轮次（含该轮次）的完整前缀；修订上一条消息先派生副本，再撤回副本的最后一轮。两者不回滚工作区文件。
 
-⁶ Kimi Edit Diff 使用原生按轮次保存的文件历史，支持文本文件新增、修改和删除；二进制、原生超限或未记录的内容不生成猜测 Diff。
-
-⁷ Pi 的审批策略需要在设置 → 模型中安装专用审批扩展；原生没有 Agent/Plan 模式时不补造同名开关。
-
-⁸ Cursor 可观察原生子任务状态；完整子任务 Transcript 不可用。斜杠命令仅展示 ACP 实际发布的可执行项，不能据此承诺所有 TUI 命令或上下文压缩。
-
+⁶ Kimi 接入 `/compact`；Qoder 仅开放当前原生 Headless 接口可执行的命令，不把 TUI 专用命令标成可用。
 
 ## 跨 Agent 协作
 
@@ -302,3 +298,13 @@ npm start
 
 - 感谢 [LINUX DO](https://linux.do/) 社区一直以来的支持。
 - 感谢 [Paseo](https://github.com/getpaseo/paseo) 项目在多 Harness 接入思路与架构设计方面带来的启发与参考。
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=bytepioneer-ai%2Fcodex-host&type=date&legend=top-left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=bytepioneer-ai/codex-host&type=date&theme=dark&legend=top-left" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=bytepioneer-ai/codex-host&type=date&legend=top-left" />
+    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=bytepioneer-ai/codex-host&type=date&legend=top-left" />
+  </picture>
+</a>

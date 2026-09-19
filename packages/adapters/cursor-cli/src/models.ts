@@ -1,217 +1,189 @@
-import { CURSOR_MODES, cursorPermission } from "./permission-modes.js";
-import type {
-  HarnessModelCatalog,
-  HarnessSessionCapabilities,
-  HarnessSessionState,
-} from "@codexhost/harness-adapter";
 import {
-  configuredModelRef,
-  readConfiguredModelRef,
-  harnessModelCatalogSchema,
   harnessModelRefSchema,
-  nativeSessionRefSchema,
-  type HarnessModelRef,
+  harnessPermissionModeCatalogSchema,
 } from "@codexhost/shared-contracts";
-import type { CursorSessionInfo, CursorTransport } from "./transport.js";
+import type { HarnessModelCatalog, HarnessSessionCapabilities } from "@codexhost/harness-adapter";
+import type { CursorSessionInfo, CursorNativeModel } from "./transport.js";
+import type { SessionConfigOption } from "@agentclientprotocol/sdk";
+import { cursorThinking, cursorThinkingState } from "./thinking.js";
+import { cursorForkAvailable } from "./fork-support.js";
 
 export const CURSOR_CAPABILITIES: HarnessSessionCapabilities = {
   configuration: {
     selectModel: true,
     selectThinkingOption: false,
     selectPermissionMode: true,
-    permissionModeScope: "turn",
+    permissionModeScope: "live",
   },
-  history: { fork: false, forkAcrossCwd: false, rollbackLastTurn: false },
+  history: {
+    fork: cursorForkAvailable(),
+    forkAcrossCwd: false,
+    rollbackLastTurn: cursorForkAvailable(),
+  },
   subagents: { observe: true, readTranscript: false },
 };
-export { CURSOR_MODES } from "./permission-modes.js";
-export const configString = (value: unknown): string => (typeof value === "string" ? value : "");
-export const cursorModelRef = (native: string): HarnessModelRef =>
-  harnessModelRefSchema.parse({ id: `cursor.${Buffer.from(native).toString("base64url")}` });
-export function decodeCursorModelRef(ref: string): string {
-  if (!ref.startsWith("cursor.")) throw new Error("Unknown Cursor Model Ref");
-  return Buffer.from(ref.slice(7), "base64url").toString("utf8");
-}
-
-// Only the Adapter understands selection payloads. They preserve a model and its
-// native parameter values across draft submission and native session restoration.
-function selectionRef(model: string, parameters: Record<string, string>): HarnessModelRef {
-  if (!Object.keys(parameters).length) return cursorModelRef(model);
-  return configuredModelRef(cursorModelRef(model), parameters);
-}
-function selection(ref: string): { model: string; parameters: Record<string, string> } {
-  const configured = readConfiguredModelRef(harnessModelRefSchema.parse({ id: ref }));
-  if (configured)
-    return { model: decodeCursorModelRef(configured.model.id), parameters: configured.values };
-  if (ref.startsWith("cursor-config.")) {
-    const value: unknown = JSON.parse(Buffer.from(ref.slice(14), "base64url").toString("utf8"));
-    if (
-      !Array.isArray(value) ||
-      typeof value[0] !== "string" ||
-      !value[1] ||
-      typeof value[1] !== "object" ||
-      Array.isArray(value[1]) ||
-      !Object.values(value[1]).every((v) => typeof v === "string")
-    )
-      throw new Error("Invalid Cursor configuration Ref");
-    return { model: value[0], parameters: value[1] };
-  }
-  const native = decodeCursorModelRef(ref);
-  // Migration from the previous full-variant refs; parameters are still validated
-  // against the fresh native config before they are submitted individually.
-  const match = /^([^\[\]]+)\[(.*)\]$/u.exec(native);
-  if (!match) return { model: native, parameters: {} };
-  const parameters: Record<string, string> = {};
-  for (const part of (match[2] ?? "").split(",")) {
-    const index = part.indexOf("=");
-    if (index > 0) parameters[part.slice(0, index)] = part.slice(index + 1);
-  }
-  return { model: match[1] ?? native, parameters };
-}
-export function cursorSelects(info: CursorSessionInfo) {
-  return (info.configOptions ?? []).flatMap((option) =>
-    option.type === "select"
-      ? [
-          {
-            ...option,
-            options: option.options.flatMap((entry) =>
-              "value" in entry ? [entry] : entry.options,
-            ),
-          },
-        ]
-      : [],
-  );
-}
-function modelSelect(info: CursorSessionInfo) {
-  const model = cursorSelects(info).find((option) => option.id === "model");
-  if (!model) throw new Error("Cursor returned no model configuration");
-  return model;
-}
-function parameters(info: CursorSessionInfo) {
-  return cursorSelects(info).filter((option) => option.id !== "model" && option.id !== "mode");
-}
-export function cursorCapabilities(): HarnessSessionCapabilities {
-  return CURSOR_CAPABILITIES;
+export const CURSOR_MODES = harnessPermissionModeCatalogSchema.parse({
+  defaultModeId: "agent",
+  modes: [
+    { id: "agent", label: "Agent", description: "Native agent mode with Cursor tool approvals" },
+    { id: "plan", label: "Plan", description: "Native read-only planning mode" },
+    { id: "ask", label: "Ask", description: "Native read-only question mode" },
+  ],
+});
+export const cursorModelRef = (nativeId: string) =>
+  harnessModelRefSchema.parse({ id: `cursor.${Buffer.from(nativeId).toString("base64url")}` });
+export function cursorModels(info: CursorSessionInfo) {
+  const option = info.configOptions?.find((option) => option.id === "model");
+  if (!option || option.type !== "select")
+    throw new Error("Cursor returned no model configuration");
+  const models = option.options.flatMap((entry) => ("value" in entry ? [entry] : entry.options));
+  return { models, current: option.currentValue };
 }
 export function cursorCatalog(info: CursorSessionInfo): HarnessModelCatalog {
-  const model = modelSelect(info);
-  const current = configString(model.currentValue);
-  const configs = parameters(info);
-  const values = Object.fromEntries(
-    configs.map((option) => [option.id, configString(option.currentValue)]),
-  );
-  const currentRef = selectionRef(current, values);
-  const options = model.options.some((option) => option.value === current)
-    ? model.options
-    : [{ value: current, name: current }, ...model.options];
-  return harnessModelCatalogSchema.parse({
-    models: options.map((option) => ({
-      ref: option.value === current ? currentRef : cursorModelRef(option.value),
-      label: option.name,
-      configurationOptions:
-        option.value === current
-          ? configCatalog(current, configs)
-          : configCatalog(
-              option.value,
-              parameters({
-                configOptions:
-                  info.availableModels?.find((m) => m.value === option.value)?.configOptions ?? [],
-              }),
-            ),
-      ...(option.value === current && !model.options.some((entry) => entry.value === current)
-        ? { selectable: false }
-        : {}),
-    })),
-    defaultModel: currentRef,
-    thinkingOptions: [],
-    configurationOptions: configCatalog(current, configs),
+  const native = cursorModels(info);
+  const thinking = new Map<
+    string,
+    { id: ReturnType<typeof cursorThinking>[number]["id"]; label: string }
+  >();
+  const models = native.models.map((model) => {
+    const config =
+      model.value === native.current
+        ? info.configOptions
+        : info.nativeModels?.find((entry) => entry.value === model.value)?.configOptions;
+    const options = cursorThinking(config);
+    for (const { id, label } of options) thinking.set(id, { id, label });
+    return {
+      ref: cursorConfiguredModelRef(model.value, config),
+      label: model.name,
+      supportedThinkingOptionIds: options.map(({ id }) => id),
+    };
   });
-}
-function configCatalog(current: string, configs: ReturnType<typeof parameters>) {
-  const values = Object.fromEntries(configs.map((o) => [o.id, configString(o.currentValue)]));
-  return configs.map((option) => ({
-    id: option.id,
-    label: option.name,
-    currentValue: configString(option.currentValue),
-    ...(option.description ? { description: option.description } : {}),
-    options: option.options.map((value) => ({
-      value: value.value,
-      label: value.name,
-      model: selectionRef(current, { ...values, [option.id]: value.value }),
-    })),
-  }));
+  if (!models.length) throw new Error("Cursor returned no model catalog");
+  const current = cursorThinkingState(info).effectiveThinkingOptionId;
+  return {
+    models,
+    defaultModel: cursorConfiguredModelRef(native.current, info.configOptions),
+    thinkingOptions: [...thinking.values()],
+    ...(current ? { defaultThinkingOptionId: current } : {}),
+  };
 }
 export function cursorNativeModel(info: CursorSessionInfo, ref: string): string {
-  const legacy = ref.startsWith("cursor.")
-    ? modelSelect(info).options.find((option) => cursorModelRef(option.value).id === ref)
-    : undefined;
-  if (legacy) return legacy.value;
-  const selected = selection(ref);
-  const exact = modelSelect(info).options.find((option) => option.value === selected.model);
-  if (!exact) throw new Error("Model is not in this Cursor session's native catalog");
-  return exact.value;
+  const native = cursorModels(info).models.find((model) => cursorModelRef(model.value).id === ref);
+  if (!native) throw new Error("Model is not in this Cursor session's native catalog");
+  return native.value;
 }
-export function withConfigOptions(
-  info: CursorSessionInfo,
-  configOptions: CursorSessionInfo["configOptions"],
-): CursorSessionInfo {
-  // ACP returns a full replacement, including removal of unsupported parameters.
-  return { ...info, configOptions: configOptions ?? [] };
+
+/** Validate the private extension at its boundary; retain only select configuration. */
+export function parseCursorNativeModels(input: Record<string, unknown>): CursorNativeModel[] {
+  if (!Array.isArray(input.models))
+    throw new Error("Cursor returned no parameterized model catalog");
+  return input.models.map((model: unknown) => {
+    if (
+      typeof model !== "object" ||
+      model === null ||
+      !("value" in model) ||
+      !("name" in model) ||
+      !("configOptions" in model) ||
+      typeof model.value !== "string" ||
+      typeof model.name !== "string" ||
+      !Array.isArray(model.configOptions)
+    )
+      throw new Error("Invalid Cursor model metadata");
+    return {
+      value: model.value,
+      name: model.name,
+      configOptions: model.configOptions.map((option: unknown) => {
+        if (
+          typeof option !== "object" ||
+          option === null ||
+          !("id" in option) ||
+          !("name" in option) ||
+          !("type" in option) ||
+          !("currentValue" in option) ||
+          !("options" in option) ||
+          typeof option.id !== "string" ||
+          typeof option.name !== "string" ||
+          option.type !== "select" ||
+          typeof option.currentValue !== "string" ||
+          !Array.isArray(option.options)
+        )
+          throw new Error("Invalid Cursor parameter metadata");
+        const entries = option.options.map((entry: unknown) => {
+          if (
+            typeof entry !== "object" ||
+            entry === null ||
+            !("value" in entry) ||
+            !("name" in entry) ||
+            typeof entry.value !== "string" ||
+            typeof entry.name !== "string"
+          )
+            throw new Error("Invalid Cursor parameter choice");
+          return { value: entry.value, name: entry.name };
+        });
+        return {
+          id: option.id,
+          name: option.name,
+          type: "select" as const,
+          currentValue: option.currentValue,
+          options: entries,
+          ...("category" in option && typeof option.category === "string"
+            ? { category: option.category }
+            : {}),
+        };
+      }),
+    };
+  });
 }
-export async function configureCursorModel(
-  transport: CursorTransport,
+
+export function cursorModelSelection(
   info: CursorSessionInfo,
   ref: string,
-): Promise<CursorSessionInfo> {
-  const requested = selection(ref);
-  const native = cursorNativeModel(info, ref);
-  let next = info;
-  if (
-    modelSelect(next).currentValue !== native ||
-    (ref.startsWith("cursor.") && native.includes("["))
-  ) {
-    next = withConfigOptions(next, (await transport.configure("model", native)).configOptions);
-    if (!modelSelect(next).currentValue) throw new Error("Cursor did not confirm Model selection");
+): Array<[string, string]> {
+  const exact = cursorModels(info).models.find((model) => cursorModelRef(model.value).id === ref);
+  if (exact) return [["model", exact.value]];
+  // Revalidate legacy bracketed refs against native parameter metadata before changing anything.
+  if (!ref.startsWith("cursor.")) throw new Error("Unknown Cursor model reference");
+  const decoded = Buffer.from(ref.slice(7), "base64url").toString();
+  if (cursorModelRef(decoded).id !== ref) throw new Error("Invalid Cursor model reference");
+  const match = /^([^\[\]]+)\[([^\[\]]*)\]$/u.exec(decoded);
+  const model = match && info.nativeModels?.find((entry) => entry.value === match[1]);
+  if (!match || !model) throw new Error("Model is not in this Cursor session's native catalog");
+  const parameters: Array<[string, string]> = [];
+  for (const parameter of match[2] ? match[2].split(",") : []) {
+    const pair = parameter.split("=");
+    const [id, value] = pair;
+    if (pair.length !== 2 || !id || value === undefined || parameters.some(([key]) => key === id))
+      throw new Error("Invalid Cursor model parameters");
+    const option = model.configOptions.find((option) => option.id === id);
+    if (
+      !option ||
+      option.type !== "select" ||
+      !option.options
+        .flatMap((entry) => ("value" in entry ? [entry] : entry.options))
+        .some((entry) => entry.value === value)
+    )
+      throw new Error("Legacy Cursor model parameter is not selectable in the native catalog");
+    parameters.push([id, value]);
   }
-  for (const [id, value] of Object.entries(native.includes("[") ? {} : requested.parameters)) {
-    const option = parameters(next).find((option) => option.id === id);
-    if (!option || !option.options.some((entry) => entry.value === value))
-      throw new Error(`Cursor does not advertise ${id}=${value}`);
-    if (option.currentValue === value) continue;
-    next = withConfigOptions(next, (await transport.configure(id, value)).configOptions);
-    if (parameters(next).find((option) => option.id === id)?.currentValue !== value)
-      throw new Error(`Cursor did not confirm ${id}`);
-  }
-  return next;
+  return [["model", model.value], ...parameters];
 }
-export function cursorSessionState(
-  info: CursorSessionInfo,
-  nativeSessionId: string,
-  force = false,
-): HarnessSessionState {
-  const catalog = cursorCatalog(info);
-  if (!catalog.defaultModel) throw new Error("Cursor returned no current Model");
-  const mode =
-    cursorSelects(info).find((option) => option.id === "mode")?.currentValue ??
-    info.modes?.currentModeId ??
-    "agent";
-  const permissionMode = CURSOR_MODES.modes.find(
-    (option) => option.id === cursorPermission(mode, force),
-  );
-  const summary = parameters(info)
-    .map((option) => option.options.find((value) => value.value === option.currentValue)?.name)
-    .filter(Boolean)
-    .join(" · ");
+
+export function cursorCapabilities(info: CursorSessionInfo): HarnessSessionCapabilities {
   return {
-    nativeRef: nativeSessionRefSchema.parse({
-      harnessId: "cursor-cli",
-      nativeSessionId,
-      formatVersion: 1,
-    }),
-    effectiveModel: catalog.defaultModel,
-    modelCatalog: catalog,
-    ...(summary ? { resolvedModelLabel: summary } : {}),
-    availableThinkingOptions: [],
-    ...(permissionMode ? { effectivePermissionModeId: permissionMode.id } : {}),
+    ...CURSOR_CAPABILITIES,
+    configuration: {
+      ...CURSOR_CAPABILITIES.configuration,
+      selectThinkingOption: cursorCatalog(info).thinkingOptions.length > 0,
+    },
   };
+}
+
+/** Keep native non-Thinking parameters in the persisted Model Ref across Host restarts. */
+export function cursorConfiguredModelRef(model: string, options?: SessionConfigOption[] | null) {
+  const parameters = (options ?? []).flatMap((option) =>
+    option.category === "model_config" && option.type === "select"
+      ? [`${option.id}=${option.currentValue}`]
+      : [],
+  );
+  return cursorModelRef(parameters.length ? `${model}[${parameters.join(",")}]` : model);
 }

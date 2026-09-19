@@ -1,4 +1,4 @@
-import type { CursorAvailableModel } from "./transport.js";
+import type { CursorNativeModel } from "./transport.js";
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -10,7 +10,7 @@ function text(value: unknown): string {
   return value;
 }
 /** Cursor's native ACP extension provides every Model's independent parameter definitions. */
-export function parseCursorAvailableModels(value: unknown): CursorAvailableModel[] {
+export function parseCursorAvailableModels(value: unknown): CursorNativeModel[] {
   const models = record(value).models;
   if (!Array.isArray(models)) throw new Error("Cursor returned no available Models");
   return models.map((raw) => {
