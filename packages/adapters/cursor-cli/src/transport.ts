@@ -21,6 +21,8 @@ export interface CursorTransportOptions {
   command?: string;
   timeoutMs?: number;
   delegation?: boolean;
+  /** Native `cursor-agent --force`; not a Session config option. */
+  force?: boolean;
   /** History replay needs session/load, not the account model catalog. */
   loadModelCatalog?: boolean;
 }
@@ -90,7 +92,11 @@ export class CursorTransport {
   }
 
   async #prepare(): Promise<void> {
-    const invocation = cursorInvocation(this.options.environment, this.options.command);
+    const invocation = cursorInvocation(
+      this.options.environment,
+      this.options.command,
+      this.options.force ? ["--force", "acp"] : ["acp"],
+    );
     const child = spawn(invocation.command, invocation.arguments, {
       cwd: this.options.cwd,
       env: this.options.environment,

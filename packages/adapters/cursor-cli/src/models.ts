@@ -8,12 +8,14 @@ import {
   readConfiguredModelRef,
   harnessModelCatalogSchema,
   harnessModelRefSchema,
-  harnessPermissionModeCatalogSchema,
   nativeSessionRefSchema,
   type HarnessModelRef,
 } from "@codexhost/shared-contracts";
+import { CURSOR_MODES, cursorPermission } from "./permission-modes.js";
 import type { CursorNativeModel, CursorSessionInfo, CursorTransport } from "./transport.js";
 import { cursorForkAvailable } from "./fork-support.js";
+
+export { CURSOR_MODES } from "./permission-modes.js";
 
 export const CURSOR_CAPABILITIES: HarnessSessionCapabilities = {
   configuration: {
@@ -29,14 +31,6 @@ export const CURSOR_CAPABILITIES: HarnessSessionCapabilities = {
   },
   subagents: { observe: true, readTranscript: false },
 };
-export const CURSOR_MODES = harnessPermissionModeCatalogSchema.parse({
-  defaultModeId: "agent",
-  modes: [
-    { id: "agent", label: "Agent", description: "Native agent mode with Cursor tool approvals" },
-    { id: "plan", label: "Plan", description: "Native read-only planning mode" },
-    { id: "ask", label: "Ask", description: "Native read-only question mode" },
-  ],
-});
 export const configString = (value: unknown): string => (typeof value === "string" ? value : "");
 export const cursorModelRef = (native: string): HarnessModelRef =>
   harnessModelRefSchema.parse({ id: `cursor.${Buffer.from(native).toString("base64url")}` });
@@ -197,6 +191,7 @@ export async function configureCursorModel(
 export function cursorSessionState(
   info: CursorSessionInfo,
   nativeSessionId: string,
+  force = false,
 ): HarnessSessionState {
   const catalog = cursorCatalog(info);
   if (!catalog.defaultModel) throw new Error("Cursor returned no current Model");
@@ -204,7 +199,9 @@ export function cursorSessionState(
     cursorSelects(info).find((option) => option.id === "mode")?.currentValue ??
     info.modes?.currentModeId ??
     "agent";
-  const permissionMode = CURSOR_MODES.modes.find((option) => option.id === mode);
+  const permissionMode = CURSOR_MODES.modes.find(
+    (option) => option.id === cursorPermission(mode, force),
+  );
   const summary = parameters(info)
     .map((option) => option.options.find((value) => value.value === option.currentValue)?.name)
     .filter(Boolean)

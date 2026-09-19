@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { harnessThinkingOptionIdSchema, hostTurnIdSchema } from "@codexhost/shared-contracts";
+import {
+  harnessPermissionModeIdSchema,
+  harnessThinkingOptionIdSchema,
+  hostTurnIdSchema,
+} from "@codexhost/shared-contracts";
 import type { HarnessOutput } from "@codexhost/harness-adapter";
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { CursorAdapter, CursorSession } from "../src/adapter.js";
@@ -117,6 +121,29 @@ describe("Cursor parameterized ACP configuration", () => {
       expect(configure).toHaveBeenCalledWith("context", "1m");
     } finally {
       await adapter.close();
+    }
+  });
+  it("relaunches ACP with --force when switching to 自动执行", async () => {
+    const f = setup();
+    const opened = vi.spyOn(CursorTransport.prototype, "open").mockImplementation(async function (
+      this: CursorTransport,
+    ) {
+      this.sessionId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+      return structuredClone(info);
+    });
+    try {
+      expect(
+        await f.session.execute({
+          type: "permissionMode.select",
+          permissionModeId: harnessPermissionModeIdSchema.parse("agent-auto"),
+        }),
+      ).toMatchObject({ ok: true });
+      expect(f.session.transport.options.force).toBe(true);
+      expect(opened).toHaveBeenCalled();
+      expect(f.session.initialState.effectivePermissionModeId).toBe("agent-auto");
+    } finally {
+      await f.session.close();
+      await f.done;
     }
   });
   it("rejects Thinking.select in favor of native model configuration controls", async () => {

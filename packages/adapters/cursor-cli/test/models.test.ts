@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { selectModelConfiguration, readConfiguredModelRef } from "@codexhost/shared-contracts";
 import {
+  CURSOR_MODES,
   configureCursorModel,
   cursorCatalog,
   cursorModelRef,
@@ -92,6 +93,16 @@ describe("Cursor parameterized ACP configuration", () => {
     expect(catalog.thinkingOptions).toEqual([]);
     expect(catalog.models[0]?.label).toBe("Opus");
     expect(cursorSessionState(info(), "native").resolvedModelLabel).toBe("On · Off · 300K · High");
+    expect(cursorSessionState(info(), "native").effectivePermissionModeId).toBe("agent");
+    expect(cursorSessionState(info(), "native", true).effectivePermissionModeId).toBe("agent-auto");
+    expect(CURSOR_MODES.modes.map((mode) => mode.id)).toEqual([
+      "agent",
+      "agent-auto",
+      "plan",
+      "plan-auto",
+      "ask",
+      "ask-auto",
+    ]);
   });
   it.each([
     ["thinking", "false"],

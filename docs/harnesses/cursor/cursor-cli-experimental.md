@@ -34,8 +34,9 @@ integration. [CLI ACP](https://cursor.com/docs/cli/acp) is the selected interfac
   creating a native user Turn.
 - Outbound cross-Harness delegation through a session-local native MCP server,
   enabled only when the Host supplies all four delegation environment variables.
-- Native Agent, Plan and Ask configuration, confirmed by the ACP response before
-  changing Host state. These are execution modes, not fabricated approval levels.
+- Native Agent, Plan and Ask configuration, combined with Cursor's native
+  `--force` approval: each execution mode is offered as 需要审批 or 自动执行.
+  Switching approval relaunches the ACP process; explicit deny rules still apply.
 - Account quota inspection and native session import. Discovery prefers the rolling
   `cursor-agent` shim over a stale `versions/` binary so Settings updates see the
   installed CLI.

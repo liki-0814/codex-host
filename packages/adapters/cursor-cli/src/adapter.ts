@@ -47,6 +47,7 @@ import {
   configureCursorModel,
   withConfigOptions,
 } from "./models.js";
+import { decodeCursorPermission } from "./permission-modes.js";
 import {
   CursorTransport,
   type CursorSessionInfo,
@@ -210,6 +211,12 @@ export class CursorAdapter implements HarnessAdapter {
     if (input.kind === "resume" && input.nativeRef.harnessId !== this.harnessId)
       return rejected("invalidRequest", "Session belongs to another Harness");
     const options = { ...this.transportOptions(input.cwd, input.environment), delegation: true };
+    try {
+      if (input.permissionModeId)
+        options.force = decodeCursorPermission(input.permissionModeId).force;
+    } catch {
+      return rejected("invalidRequest", "Unknown Cursor execution/approval mode");
+    }
     const transport = prepared ?? new CursorTransport(options);
     try {
       const before =
@@ -336,8 +343,20 @@ export class CursorAdapter implements HarnessAdapter {
         [
           ...new Set([...Object.keys(sourceEnvironment), ...Object.keys(options.environment)]),
         ].every((key) => sourceEnvironment[key] === options.environment[key]);
+      const mode =
+        input.kind === "rollbackLastTurn"
+          ? (input.permissionModeId ?? source?.initialState.effectivePermissionModeId)
+          : source?.initialState.effectivePermissionModeId;
+      let force = options.force ?? false;
+      if (mode) {
+        try {
+          force = decodeCursorPermission(mode).force;
+        } catch {
+          return rejected("invalidRequest", "Unknown Cursor execution/approval mode");
+        }
+      }
       transport = new CursorTransport(
-        { ...options, delegation: true },
+        { ...options, delegation: true, force },
         sameEnvironment ? source?.info.nativeModels : undefined,
       );
       // Authentication needs no target ID; overlap it with the native CLI transaction.
@@ -368,10 +387,6 @@ export class CursorAdapter implements HarnessAdapter {
         input.kind === "rollbackLastTurn"
           ? (input.thinkingOptionId ?? source?.initialState.effectiveThinkingOptionId)
           : source?.initialState.effectiveThinkingOptionId;
-      const mode =
-        input.kind === "rollbackLastTurn"
-          ? (input.permissionModeId ?? source?.initialState.effectivePermissionModeId)
-          : source?.initialState.effectivePermissionModeId;
       const opened = await this.#openSession(
         {
           kind: "resume",
@@ -464,6 +479,7 @@ export class CursorSession implements HarnessSession {
   #snapshot: CursorLoadedSnapshot | undefined;
   #subagentOutput: CursorSubagents | undefined;
   requestedModel: HarnessModelRef | undefined;
+  requestedPermission: string | undefined;
   lockForFork(): (() => void) | undefined {
     if (this.#closed || this.#active || this.#configuring) return;
     this.#configuring = true;
@@ -479,7 +495,7 @@ export class CursorSession implements HarnessSession {
     }
   }
   constructor(
-    readonly transport: CursorTransport,
+    public transport: CursorTransport,
     readonly info: CursorSessionInfo,
     readonly onClose: () => void,
     created = true,
@@ -488,7 +504,11 @@ export class CursorSession implements HarnessSession {
     this.info = structuredClone(info);
     this.#fresh = created;
     this.#snapshot = loadedSnapshot;
-    this.initialState = cursorSessionState(this.info, transport.sessionId);
+    this.initialState = cursorSessionState(
+      this.info,
+      transport.sessionId,
+      transport.options.force,
+    );
   }
   #native(allowMissing = false) {
     return readCursorNativeTurns(
@@ -621,17 +641,7 @@ export class CursorSession implements HarnessSession {
       }
       if (!CURSOR_MODES.modes.some((mode) => mode.id === command.permissionModeId))
         return rejected("invalidRequest", "Unknown Cursor execution mode");
-      const current =
-        this.info.configOptions?.find((option) => option.id === "mode")?.currentValue ??
-        this.info.modes?.currentModeId ??
-        "agent";
-      if (current !== command.permissionModeId) {
-        const result = await this.transport.configure("mode", command.permissionModeId);
-        const option = result.configOptions.find((entry) => entry.id === "mode");
-        if (!option || option.currentValue !== command.permissionModeId)
-          throw new Error("Cursor did not confirm configuration selection");
-        this.#applyConfig(result.configOptions);
-      } else this.#applyConfig(this.info.configOptions);
+      await this.#applyPermission(command.permissionModeId);
       return { ok: true, value: { completed: true } };
     } catch (error) {
       return { ok: false, error: cursorError(error) };
@@ -639,10 +649,39 @@ export class CursorSession implements HarnessSession {
       this.#configuring = false;
     }
   }
+  async #applyPermission(id: string): Promise<void> {
+    const { mode, force } = decodeCursorPermission(id);
+    if (force !== (this.transport.options.force ?? false)) {
+      const { sessionId, options } = this.transport;
+      this.#snapshot = undefined;
+      await this.transport.close();
+      this.transport = new CursorTransport(
+        { ...options, force },
+        this.info.nativeModels,
+      );
+      const info = await this.transport.open(sessionId);
+      Object.assign(this.info, {
+        ...info,
+        ...(this.info.nativeModels ? { nativeModels: this.info.nativeModels } : {}),
+      });
+    }
+    const current =
+      this.info.configOptions?.find((option) => option.id === "mode")?.currentValue ??
+      this.info.modes?.currentModeId ??
+      "agent";
+    if (current !== mode) {
+      const result = await this.transport.configure("mode", mode);
+      const option = result.configOptions.find((entry) => entry.id === "mode");
+      if (!option || option.currentValue !== mode)
+        throw new Error("Cursor did not confirm configuration selection");
+      this.#applyConfig(result.configOptions);
+    } else this.#applyConfig(this.info.configOptions);
+    this.requestedPermission = id;
+  }
   #applyConfig(configOptions: CursorSessionInfo["configOptions"]) {
     const info = withConfigOptions(this.info, configOptions);
     Object.assign(this.info, info);
-    const next = cursorSessionState(info, this.transport.sessionId);
+    const next = cursorSessionState(info, this.transport.sessionId, this.transport.options.force);
     this.initialState.modelCatalog = cursorCatalog(info);
     if (next.effectiveModel) this.initialState.effectiveModel = next.effectiveModel;
     else delete this.initialState.effectiveModel;
@@ -672,7 +711,9 @@ export class CursorSession implements HarnessSession {
     };
     let nativeTurnRef: ReturnType<typeof nativeTurnRefSchema.parse> | undefined;
     try {
+      const permission = command.permissionModeId ?? this.requestedPermission;
       const previousModel = this.initialState.effectiveModel;
+      if (permission) await this.#applyPermission(permission);
       const model = command.model ?? this.requestedModel ?? previousModel;
       if (model && model.id !== this.initialState.effectiveModel?.id) {
         const next = await configureCursorModel(this.transport, this.info, model.id);
