@@ -32,6 +32,7 @@ const refreshResponseSchema = z.object({
 });
 
 type NativeCredentials = z.infer<typeof credentialSchema>;
+type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 function kimiHome(environment: NodeJS.ProcessEnv): string {
   return environment.KIMI_CODE_HOME ?? join(environment.HOME ?? homedir(), ".kimi-code");
@@ -163,7 +164,7 @@ async function refreshNativeCredentials(
   environment: NodeJS.ProcessEnv,
   stored: { raw: Record<string, unknown>; credentials: NativeCredentials },
   path: string,
-  fetchImpl: typeof fetch,
+  fetchImpl: FetchLike,
   writeAuthFile: (path: string, contents: string) => Promise<void>,
   signal: AbortSignal,
   now: number,
@@ -212,7 +213,7 @@ export interface FetchKimiAccountInput {
   environment?: NodeJS.ProcessEnv;
   readAuthFile?(path: string): Promise<string>;
   writeAuthFile?(path: string, contents: string): Promise<void>;
-  fetch?(url: string, init: RequestInit): Promise<Response>;
+  fetch?: FetchLike;
   signal?: AbortSignal;
   now?: number;
 }
