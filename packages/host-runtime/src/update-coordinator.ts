@@ -23,6 +23,7 @@ import {
 } from "@codexhost/update-manager";
 
 const ERROR_MAX_LENGTH = 500;
+const RELAUNCH_NOT_READY = "updated codexhost did not become ready after relaunch";
 
 export interface HostUpdateCoordinator {
   check(signal?: AbortSignal): Promise<UpdateCheckResult>;
@@ -85,6 +86,20 @@ export function createHostUpdateCoordinator(
     });
   let candidate: CodexhostLatestRelease | null = null;
 
+  function displayableStatus(
+    context: InstalledUpdateContext,
+    status: UpdateStatus | null,
+  ): UpdateStatus | null {
+    if (
+      status?.phase === "failed" &&
+      status.error === RELAUNCH_NOT_READY &&
+      compareSemanticVersions(context.metadata.version, status.version) >= 0
+    ) {
+      return null;
+    }
+    return status;
+  }
+
   async function latestStatus(context: InstalledUpdateContext): Promise<UpdateStatus | null> {
     const discovered = await discoverLatestUpdateStatus(context.common.stateDirectory);
     if (!discovered) return null;
@@ -95,7 +110,7 @@ export function createHostUpdateCoordinator(
     ) {
       return null;
     }
-    return publicStatus(discovered.status);
+    return displayableStatus(context, publicStatus(discovered.status));
   }
 
   async function installable(

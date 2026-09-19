@@ -20,7 +20,10 @@ use request::UpdateRequest;
 use status::write_status;
 
 const WAIT_TIMEOUT: Duration = Duration::from_secs(180);
-const RELAUNCH_TIMEOUT: Duration = Duration::from_secs(30);
+// The new Launcher publishes its runtime descriptor only after the Desktop
+// Host chain is up, and that wait is itself 30s. `open` plus Gatekeeper can
+// add more delay, so the handshake must outlast the Host-chain timeout.
+const RELAUNCH_TIMEOUT: Duration = Duration::from_secs(180);
 const MAX_RUNTIME_DESCRIPTOR_BYTES: u64 = 4 * 1024;
 
 #[derive(Deserialize)]

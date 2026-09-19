@@ -377,4 +377,120 @@ describe("Host update coordinator", () => {
       error: null,
     });
   });
+
+  it("hides a stale relaunch handshake failure once the installed version is running", async () => {
+    const fixture = await npmFixture();
+    const home = fixture.environment.HOME;
+    if (!home) throw new Error("fixture HOME is missing");
+    const stateDirectory = path.join(
+      home,
+      "Library",
+      "Application Support",
+      "codexhost",
+      "updates",
+    );
+    await mkdir(path.join(stateDirectory, "update-relaunch"), { recursive: true });
+    await writeFile(
+      path.join(stateDirectory, "update-relaunch", "status-v1.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        version: "1.2.2",
+        installation: "npm",
+        phase: "failed",
+        updatedAt: Math.floor(Date.now() / 1000),
+        error: "updated codexhost did not become ready after relaunch",
+      }),
+    );
+    const coordinator = createHostUpdateCoordinator({
+      hostRuntimePath: fixture.hostRuntimePath,
+      environment: fixture.environment,
+      platform: "darwin",
+      architecture: "arm64",
+      fetchLatest: async () => release("1.2.2"),
+    });
+    await expect(coordinator.check()).resolves.toMatchObject({
+      currentVersion: "1.2.2",
+      latestVersion: "1.2.2",
+      updateAvailable: false,
+      status: null,
+      error: null,
+    });
+  });
+
+  it("keeps a relaunch handshake failure when the installed version is still older", async () => {
+    const fixture = await npmFixture();
+    const home = fixture.environment.HOME;
+    if (!home) throw new Error("fixture HOME is missing");
+    const stateDirectory = path.join(
+      home,
+      "Library",
+      "Application Support",
+      "codexhost",
+      "updates",
+    );
+    await mkdir(path.join(stateDirectory, "update-relaunch"), { recursive: true });
+    await writeFile(
+      path.join(stateDirectory, "update-relaunch", "status-v1.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        version: "1.2.3",
+        installation: "npm",
+        phase: "failed",
+        updatedAt: Math.floor(Date.now() / 1000),
+        error: "updated codexhost did not become ready after relaunch",
+      }),
+    );
+    const coordinator = createHostUpdateCoordinator({
+      hostRuntimePath: fixture.hostRuntimePath,
+      environment: fixture.environment,
+      platform: "darwin",
+      architecture: "arm64",
+      fetchLatest: async () => release("1.2.3"),
+    });
+    await expect(coordinator.check()).resolves.toMatchObject({
+      currentVersion: "1.2.2",
+      latestVersion: "1.2.3",
+      updateAvailable: true,
+      status: {
+        version: "1.2.3",
+        phase: "failed",
+        error: "updated codexhost did not become ready after relaunch",
+      },
+    });
+  });
+
+  it("still reports a same-version update failure that is not a late relaunch handshake", async () => {
+    const fixture = await npmFixture();
+    const home = fixture.environment.HOME;
+    if (!home) throw new Error("fixture HOME is missing");
+    const stateDirectory = path.join(
+      home,
+      "Library",
+      "Application Support",
+      "codexhost",
+      "updates",
+    );
+    await mkdir(path.join(stateDirectory, "update-failed"), { recursive: true });
+    await writeFile(
+      path.join(stateDirectory, "update-failed", "status-v1.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        version: "1.2.2",
+        installation: "npm",
+        phase: "failed",
+        updatedAt: Math.floor(Date.now() / 1000),
+        error: "permission denied",
+      }),
+    );
+    const coordinator = createHostUpdateCoordinator({
+      hostRuntimePath: fixture.hostRuntimePath,
+      environment: fixture.environment,
+      platform: "darwin",
+      architecture: "arm64",
+      fetchLatest: async () => release("1.2.2"),
+    });
+    await expect(coordinator.check()).resolves.toMatchObject({
+      status: { version: "1.2.2", phase: "failed", error: "permission denied" },
+    });
+  });
 });
