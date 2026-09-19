@@ -24,9 +24,11 @@ integration. [CLI ACP](https://cursor.com/docs/cli/acp) is the selected interfac
 - Native create, text prompt, streaming text/reasoning, tool progress and cancellation.
 - Structured Edit Diff for successful tools carrying native ACP diff content,
   including new files and updates, in live output and native history replay.
-- Dynamic native parameterized model catalog and Thinking selection. Native
-  `thought_level` parameters become complete selectable combinations (for example,
-  thinking on/off plus effort); unrelated context/fast parameters stay in Model refs.
+- Native model and parameter configuration through ACP. Fast, Thinking, Context
+  and Effort stay independent `configOptions`; the Renderer shows generic
+  controls and never folds Fast into the Thinking menu. Picker changes update
+  local draft configuration immediately. At submission, only the final model
+  and changed parameters are applied through `session/set_config_option`.
 - Native advertised slash commands and skills through ACP `available_commands_update`.
   Custom commands keep normal Turn identity; `/copy-request-id` can complete without
   creating a native user Turn.

@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { hostTurnIdSchema } from "@codexhost/shared-contracts";
+import { harnessThinkingOptionIdSchema, hostTurnIdSchema } from "@codexhost/shared-contracts";
 import type { HarnessOutput } from "@codexhost/harness-adapter";
 import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import { CursorAdapter, CursorSession } from "../src/adapter.js";
 import { CursorTransport, type CursorSessionInfo } from "../src/transport.js";
-import { cursorCatalog, cursorModelRef, cursorModelSelection } from "../src/models.js";
-import { cursorThinking, cursorThinkingState } from "../src/thinking.js";
+import { cursorCatalog, cursorModelRef } from "../src/models.js";
 import { cursorCommands, cursorCommandPrompt } from "../src/slash-commands.js";
 
 function required<T>(value: T | undefined): T {
@@ -73,91 +72,21 @@ afterEach(() => {
   history.turns = [];
 });
 
-describe("Cursor parameterized Thinking", () => {
-  it("preserves each native thinking parameter and excludes unrelated model settings", () => {
+describe("Cursor parameterized ACP configuration", () => {
+  it("exposes Fast, Thinking, Effort and Context as native configuration controls", () => {
     const catalog = cursorCatalog(info);
-    expect(catalog.thinkingOptions).toHaveLength(4);
-    expect(catalog.models[0]?.supportedThinkingOptionIds).toHaveLength(4);
-    expect(catalog.models[1]?.supportedThinkingOptionIds).toEqual([]);
-    expect(
-      cursorThinking(info.configOptions).every(({ values }) =>
-        values.every(([id]) => id !== "context"),
-      ),
-    ).toBe(true);
+    expect(catalog.thinkingOptions).toEqual([]);
+    expect(catalog.configurationOptions?.map((option) => option.id)).toEqual([
+      "thinking",
+      "effort",
+      "context",
+    ]);
+    expect(catalog.models[0]?.label).toBe("alpha");
   });
-  it("confirms Thinking during an active turn and clears it when the next model lacks it", async () => {
-    const f = setup();
-    const pending = Promise.withResolvers<{ stopReason: "cancelled" }>();
-    vi.spyOn(f.transport, "prompt").mockReturnValue(pending.promise);
-    try {
-      await f.session.execute({
-        type: "turn.start",
-        turnId,
-        input: [{ type: "text", text: "work" }],
-      });
-      const option = cursorThinking(info.configOptions).find(({ values }) =>
-        values.some(([id, value]) => id === "effort" && value === "low"),
-      );
-      if (!option) throw new Error("missing thinking option");
-      expect(
-        await f.session.execute({ type: "thinking.select", thinkingOptionId: option.id }),
-      ).toEqual({ ok: true, value: { completed: true } });
-      expect(f.session.initialState.effectiveThinkingOptionId).toBe(option.id);
-      expect(f.transport.configure).not.toHaveBeenCalledWith("context", expect.anything());
-      expect(
-        await f.session.execute({ type: "model.select", model: cursorModelRef("auto") }),
-      ).toMatchObject({ ok: true });
-      expect(f.session.initialState.effectiveThinkingOptionId).toBeUndefined();
-      expect(f.session.initialState.availableThinkingOptions).toEqual([]);
-    } finally {
-      pending.resolve({ stopReason: "cancelled" });
-      await f.session.close();
-      await f.done;
-    }
-  });
-  it("does not publish a requested selection when native confirmation fails", async () => {
-    const f = setup();
-    vi.spyOn(f.transport, "configure").mockResolvedValue({ configOptions: [] });
-    const original = structuredClone(f.session.initialState);
-    try {
-      expect(
-        await f.session.execute({
-          type: "thinking.select",
-          thinkingOptionId: required(cursorThinking(info.configOptions)[0]).id,
-        }),
-      ).toMatchObject({ ok: false });
-      expect(f.session.initialState).toEqual(original);
-    } finally {
-      await f.session.close();
-      await f.done;
-    }
-  });
-  it("reports the last confirmed state if the second parameter write fails", async () => {
-    const f = setup();
-    const original = required(vi.mocked(f.transport.configure).getMockImplementation());
-    vi.spyOn(f.transport, "configure").mockImplementation((id, value) =>
-      id === "effort" ? Promise.reject(new Error("native rejected effort")) : original(id, value),
-    );
-    try {
-      const option = required(cursorThinking(info.configOptions)[0]);
-      expect(
-        await f.session.execute({ type: "thinking.select", thinkingOptionId: option.id }),
-      ).toMatchObject({ ok: false });
-      expect(f.session.initialState).toMatchObject(
-        cursorThinkingState({
-          configOptions: [model, { ...thinking, currentValue: "false" }, effort],
-        }),
-      );
-    } finally {
-      await f.session.close();
-      await f.done;
-    }
-  });
-  it("restores non-Thinking parameters from the saved effective Model Ref", async () => {
+  it("applies a saved Model Ref parameter without using Thinking.select", async () => {
     const f = setup();
     await f.session.execute({ type: "model.select", model: cursorModelRef("alpha[context=1m]") });
     const saved = structuredClone(f.session.initialState);
-    expect(saved.effectiveModel).toEqual(cursorModelRef("alpha[context=1m]"));
     await f.session.close();
     await f.done;
     vi.spyOn(CursorTransport.prototype, "open").mockImplementation(async function (
@@ -186,27 +115,23 @@ describe("Cursor parameterized Thinking", () => {
       });
       if (!resumed.ok) throw Error(resumed.error.message);
       expect(configure).toHaveBeenCalledWith("context", "1m");
-      expect(resumed.value.initialState.effectiveModel).toEqual(saved.effectiveModel);
     } finally {
       await adapter.close();
     }
   });
-  it("validates every legacy variant parameter before modifying native configuration", () => {
-    expect(
-      cursorModelSelection(info, cursorModelRef("alpha[thinking=true,context=1m,effort=low]").id),
-    ).toEqual([
-      ["model", "alpha"],
-      ["thinking", "true"],
-      ["context", "1m"],
-      ["effort", "low"],
-    ]);
-    expect(() => cursorModelSelection(info, cursorModelRef("alpha[unknown=true]").id)).toThrow();
-    expect(() =>
-      cursorModelSelection(info, cursorModelRef("alpha[effort=imaginary]").id),
-    ).toThrow();
-    expect(() =>
-      cursorModelSelection(info, cursorModelRef("alpha[effort=low,effort=high]").id),
-    ).toThrow();
+  it("rejects Thinking.select in favor of native model configuration controls", async () => {
+    const f = setup();
+    try {
+      expect(
+        await f.session.execute({
+          type: "thinking.select",
+          thinkingOptionId: harnessThinkingOptionIdSchema.parse("high"),
+        }),
+      ).toMatchObject({ ok: false, error: { code: "unsupported" } });
+    } finally {
+      await f.session.close();
+      await f.done;
+    }
   });
 });
 
