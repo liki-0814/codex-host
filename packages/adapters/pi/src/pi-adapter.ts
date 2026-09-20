@@ -261,15 +261,10 @@ function harnessStateFromPi(
   const availableThinkingOptions = thinkingLevels
     ? normalizePiThinkingOptions(thinkingLevels)
     : undefined;
-  if (
-    availableThinkingOptions &&
-    (!state.thinkingLevel || !thinkingLevels?.includes(state.thinkingLevel))
-  ) {
-    throw new PiRpcFaultError(
-      "protocolError",
-      "Pi effective Thinking level is absent from its available levels",
-    );
-  }
+  const effectiveThinkingOptionId =
+    state.thinkingLevel && thinkingLevels?.includes(state.thinkingLevel)
+      ? state.thinkingLevel
+      : availableThinkingOptions?.[0]?.id;
   return {
     nativeRef: nativeSessionRefSchema.parse({
       harnessId: piHarnessId,
@@ -278,7 +273,7 @@ function harnessStateFromPi(
       formatVersion: 1,
     }) as NativeSessionRef,
     ...(effectiveModel ? { effectiveModel } : {}),
-    ...(state.thinkingLevel ? { effectiveThinkingOptionId: state.thinkingLevel } : {}),
+    ...(effectiveThinkingOptionId ? { effectiveThinkingOptionId } : {}),
     ...(availableThinkingOptions ? { availableThinkingOptions } : {}),
   };
 }

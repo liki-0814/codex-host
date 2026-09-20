@@ -1,4 +1,5 @@
 import {
+  configuredModelRef,
   harnessModelCatalogSchema,
   harnessModelRefSchema,
   harnessThinkingOptionIdSchema,
@@ -128,6 +129,19 @@ describe("Renderer combined Model and Thinking picker presentation", () => {
     });
     expect(view.thinkingOptions.map(({ id }) => id)).not.toContain("xhigh");
     expect(view.thinkingOptions.map(({ id }) => id)).not.toContain("max");
+  });
+
+  it("keeps Thinking options when the selected Model Ref carries Fast configuration", () => {
+    const view = rendererModelPickerPresentation({
+      status: "ready",
+      catalog: catalog(["minimal", "low", "high", "xhigh"]),
+      selected: configuredModelRef(model, { fast: "true" }),
+      selectedThinkingOptionId: harnessThinkingOptionIdSchema.parse("xhigh"),
+    });
+
+    expect(view.showThinkingSection).toBe(true);
+    expect(view.modelLabel).toBe("provider / model");
+    expect(view.thinkingOptions.map(({ id }) => id)).toEqual(["minimal", "low", "high", "xhigh"]);
   });
 
   it("shows a runtime-resolved Model label after the selected Model", () => {

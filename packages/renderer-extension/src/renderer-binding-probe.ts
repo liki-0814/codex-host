@@ -1,5 +1,5 @@
 import { PI_EXTENSION_CHANGED } from "./settings/pi-permission-setup.js";
-import { MODEL_VISIBILITY_CHANGED } from "./renderer-model-visibility.js";
+import { MODEL_VISIBILITY_CHANGED, modelVisibilityId } from "./renderer-model-visibility.js";
 import {
   decodeHarnessPluginRoute,
   selectModelConfiguration,
@@ -236,7 +236,11 @@ function isExternalConfigurationReadyView(
 ): boolean {
   return (
     modelView.status !== "selecting" &&
-    modelView.catalog?.models.some((model) => model.ref.id === modelView.selected?.id) === true &&
+    modelView.catalog?.models.some(
+      (model) =>
+        modelView.selected !== undefined &&
+        modelVisibilityId(model.ref) === modelVisibilityId(modelView.selected),
+    ) === true &&
     isPermissionModeControlReady(permissionModeView)
   );
 }
@@ -644,18 +648,22 @@ function catalogWithConfigurationState(
   if (state.modelCatalog) return state.modelCatalog;
   if (!state.availableThinkingOptions) return catalog;
   const supportedThinkingOptionIds = state.availableThinkingOptions.map(({ id }) => id);
-  const models = catalog.models.map((candidate) => {
-    const normalized = { ...candidate };
-    delete normalized.supportedThinkingOptionIds;
-    return candidate.ref.id === model.id
-      ? { ...normalized, supportedThinkingOptionIds }
-      : normalized;
-  });
+  const selectedId = modelVisibilityId(model);
+  const models = catalog.models.map((candidate) =>
+    modelVisibilityId(candidate.ref) === selectedId
+      ? { ...candidate, supportedThinkingOptionIds }
+      : candidate,
+  );
+  const thinkingIds = new Set(catalog.thinkingOptions.map(({ id }) => id));
+  const thinkingOptions = [
+    ...catalog.thinkingOptions,
+    ...state.availableThinkingOptions.filter((option) => !thinkingIds.has(option.id)),
+  ];
   const normalized = {
     ...catalog,
     models,
     defaultModel: model,
-    thinkingOptions: state.availableThinkingOptions,
+    thinkingOptions,
   };
   if (state.effectiveThinkingOptionId) {
     normalized.defaultThinkingOptionId = state.effectiveThinkingOptionId;
@@ -1715,7 +1723,7 @@ export function installRendererBindingProbe(
         effectiveModel = state.effectiveModel;
         if (
           !(state.modelCatalog ?? catalog).models.some(
-            (model) => model.ref.id === effectiveModel.id,
+            (model) => modelVisibilityId(model.ref) === modelVisibilityId(effectiveModel),
           )
         ) {
           throw new Error("External Harness activated a Model outside the current catalog");
@@ -1971,7 +1979,10 @@ export function installRendererBindingProbe(
     const selectedThinkingOptionId = catalog?.thinkingOptions.find(
       ({ id }) => id === thinkingOptionId,
     )?.id;
-    const catalogModel = catalog?.models.find((candidate) => candidate.ref.id === model?.id);
+    const catalogModel = catalog?.models.find(
+      (candidate) =>
+        model !== undefined && modelVisibilityId(candidate.ref) === modelVisibilityId(model),
+    );
     if (
       !mounted.modelView.thinkingSelectionSupported ||
       !catalog ||

@@ -132,8 +132,9 @@ export function thinkingOptionsForModel(
   catalog: HarnessModelCatalog | undefined,
   selected: HarnessModelRef | undefined,
 ): HarnessThinkingOption[] {
+  const selectedId = selected ? modelVisibilityId(selected) : undefined;
   const supported = catalog?.models.find(
-    (model) => model.ref.id === selected?.id,
+    (model) => modelVisibilityId(model.ref) === selectedId,
   )?.supportedThinkingOptionIds;
   if (!supported) return [];
   return catalog?.thinkingOptions.filter((option) => supported.includes(option.id)) ?? [];
@@ -160,7 +161,11 @@ function isTransientPickerState(view: RendererModelControlView): boolean {
 export function rendererModelPickerPresentation(
   view: RendererModelControlView,
 ): RendererModelPickerPresentation {
-  const selectedModel = view.catalog?.models.find((model) => model.ref.id === view.selected?.id);
+  const selectedModel = view.catalog?.models.find(
+    (model) =>
+      view.selected !== undefined &&
+      modelVisibilityId(model.ref) === modelVisibilityId(view.selected),
+  );
   const thinkingOptions =
     view.thinkingSelectionSupported === false
       ? []

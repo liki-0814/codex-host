@@ -19,6 +19,10 @@ import {
 import type { CursorNativeTurn } from "./native-history.js";
 import { CursorSubagents, cursorTaskAddress } from "./subagents.js";
 import { cursorForkAvailable, cursorCheckpoint } from "./fork-support.js";
+import {
+  holdCursorWritableIterablePrefix,
+  takeCursorWritableIterableClosed,
+} from "./stream-error.js";
 
 const TOOL_OUTPUT_LIMIT = 100_000;
 
@@ -62,6 +66,8 @@ export class CursorTurnOutput {
     { item: Extract<HostItem, { type: "toolExecution" }>; changes: HostFileChange[] }
   >();
   readonly #finishedTools = new Set<string>();
+  #hold = "";
+  #writableIterableClosed = false;
   constructor(
     readonly turnId: HostTurnId,
     readonly emit: (event: HostEvent) => void,
@@ -70,6 +76,39 @@ export class CursorTurnOutput {
     this.subagents = new CursorSubagents(turnId, emit, nativeTurnIndex);
   }
 
+  sawWritableIterableClosed(): boolean {
+    return this.#writableIterableClosed;
+  }
+  hasVisibleAssistantText(): boolean {
+    return this.#text?.type === "agentMessage" && this.#text.text.trim().length > 0;
+  }
+  #flushHold(): void {
+    if (!this.#hold) return;
+    const held = this.#hold;
+    this.#hold = "";
+    this.#appendText("agentMessage", held);
+  }
+  #appendText(type: "agentMessage" | "reasoning", text: string): void {
+    if (!text) return;
+    if (this.#text?.type !== type) {
+      this.#finishText();
+      const item: Extract<HostItem, { type: "agentMessage" | "reasoning" }> = {
+        type,
+        itemId: hostItemIdSchema.parse(`cursor-${this.turnId}-${++this.#index}`),
+        text: "",
+      };
+      this.#text = item;
+      this.emit({ type: "item.started", turnId: this.turnId, item: { ...item } });
+    }
+    if (!this.#text) return;
+    this.#text.text += text;
+    this.emit({
+      type: "item.updated",
+      turnId: this.turnId,
+      itemId: this.#text.itemId,
+      update: { type: "text.append", text },
+    });
+  }
   #finishText(outcome: HostItemOutcome = { status: "succeeded" }) {
     if (this.#text)
       this.emit({
@@ -81,6 +120,7 @@ export class CursorTurnOutput {
   }
   update(notification: SessionNotification) {
     if (this.subagents.update(notification)) {
+      this.#flushHold();
       this.#finishText();
       return;
     }
@@ -91,28 +131,22 @@ export class CursorTurnOutput {
     ) {
       if (update.content.type !== "text") return;
       const type = update.sessionUpdate === "agent_message_chunk" ? "agentMessage" : "reasoning";
-      if (this.#text?.type !== type) {
-        this.#finishText();
-        const item: Extract<HostItem, { type: "agentMessage" | "reasoning" }> = {
-          type,
-          itemId: hostItemIdSchema.parse(`cursor-${this.turnId}-${++this.#index}`),
-          text: "",
-        };
-        this.#text = item;
-        this.emit({ type: "item.started", turnId: this.turnId, item: { ...item } });
+      if (type === "reasoning") {
+        this.#flushHold();
+        this.#appendText(type, update.content.text);
+        return;
       }
-      if (!this.#text) return;
-      this.#text.text += update.content.text;
-      this.emit({
-        type: "item.updated",
-        turnId: this.turnId,
-        itemId: this.#text.itemId,
-        update: { type: "text.append", text: update.content.text },
-      });
+      const combined = `${this.#hold}${update.content.text}`;
+      const taken = takeCursorWritableIterableClosed(combined);
+      if (taken.closed) this.#writableIterableClosed = true;
+      const { emit, hold } = holdCursorWritableIterablePrefix(taken.visible);
+      this.#hold = hold;
+      this.#appendText(type, emit);
     } else if (
       update.sessionUpdate === "tool_call" ||
       update.sessionUpdate === "tool_call_update"
     ) {
+      this.#flushHold();
       this.#finishText();
       if (this.#finishedTools.has(update.toolCallId)) return;
       let tool = this.#tools.get(update.toolCallId);
@@ -191,6 +225,7 @@ export class CursorTurnOutput {
   }
   finish(outcome: HostItemOutcome) {
     this.subagents.finish(outcome);
+    this.#flushHold();
     this.#finishText(outcome);
     for (const { item } of this.#tools.values())
       this.emit({

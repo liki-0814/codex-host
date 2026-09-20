@@ -22,6 +22,11 @@ integration. [CLI ACP](https://cursor.com/docs/cli/acp) is the selected interfac
 ## Implemented boundary
 
 - Native create, text prompt, streaming text/reasoning, tool progress and cancellation.
+  Native ACP may stream `Error: RetriableError: WritableIterable is closed` as
+  assistant text and still return `end_turn`. The adapter drops that suffix. A
+  completed answer before it is kept. An empty error-only prompt is retried once
+  in the same session when native history did not persist; otherwise the Turn
+  fails as retryable without faulting the Session.
 - Structured Edit Diff for successful tools carrying native ACP diff content,
   including new files and updates, in live output and native history replay.
 - Native model and parameter configuration through ACP. Fast, Thinking, Context

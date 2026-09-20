@@ -229,6 +229,18 @@ function parseNativeModel(value: unknown, context: string): PiNativeModelRef | n
   return { provider: value.provider, id: value.id };
 }
 
+function parseThinkingLevelMap(
+  value: unknown,
+): Readonly<Record<string, string | null>> | undefined {
+  if (!isRecord(value)) return undefined;
+  const map: Record<string, string | null> = {};
+  for (const [level, mapped] of Object.entries(value)) {
+    if (mapped !== null && typeof mapped !== "string") continue;
+    map[level] = mapped;
+  }
+  return Object.keys(map).length > 0 ? map : undefined;
+}
+
 function sessionStateData(response: Record<string, unknown>): Record<string, unknown> {
   const data = isRecord(response.data) ? response.data : null;
   if (!data) throw new PiRpcFaultError("protocolError", "Pi RPC state response has no data");
@@ -323,7 +335,12 @@ function parseAvailableModels(response: Record<string, unknown>): PiNativeModel[
         "Pi RPC catalog contains a Model without reasoning capability",
       );
     }
-    return { ...parsed, reasoning: model.reasoning };
+    const thinkingLevelMap = parseThinkingLevelMap(model.thinkingLevelMap);
+    return {
+      ...parsed,
+      reasoning: model.reasoning,
+      ...(thinkingLevelMap ? { thinkingLevelMap } : {}),
+    };
   });
 }
 

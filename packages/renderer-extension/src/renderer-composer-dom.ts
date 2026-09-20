@@ -24,6 +24,7 @@ import {
   type RendererModelControlView,
   type RendererModelPickerControl,
 } from "./renderer-model-picker.js";
+import { modelVisibilityId } from "./renderer-model-visibility.js";
 import {
   isPermissionModeControlReady,
   mountRendererPermissionModePicker,
@@ -692,7 +693,9 @@ export function renderComposerAgentControl(
 
   const selectedModel = modelView.selected;
   const selectedCatalogModel = modelView.catalog?.models.find(
-    (model) => model.ref.id === selectedModel?.id,
+    (model) =>
+      selectedModel !== undefined &&
+      modelVisibilityId(model.ref) === modelVisibilityId(selectedModel),
   );
   const availableThinkingOptions =
     modelView.thinkingSelectionSupported === false

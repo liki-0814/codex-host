@@ -401,8 +401,6 @@ describe("Pi HarnessAdapter Session", () => {
           { id: "low", label: "Low" },
           { id: "medium", label: "Medium" },
           { id: "high", label: "High" },
-          { id: "xhigh", label: "Extra High" },
-          { id: "max", label: "Max" },
         ],
         defaultThinkingOptionId: "high",
       },
@@ -506,7 +504,7 @@ describe("Pi HarnessAdapter Session", () => {
       }),
       expect.objectContaining({
         label: "synthetic-provider / synthetic-model",
-        supportedThinkingOptionIds: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+        supportedThinkingOptionIds: ["off", "minimal", "low", "medium", "high"],
       }),
     ]);
     expect(dependencies.createTransport).toHaveBeenCalledWith(

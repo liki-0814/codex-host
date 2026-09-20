@@ -17,6 +17,7 @@ export interface PiNativeModelRef {
 
 export interface PiNativeModel extends PiNativeModelRef {
   reasoning: boolean;
+  thinkingLevelMap?: Readonly<Record<string, string | null>>;
 }
 
 const PI_MODEL_REF_PREFIX = "pi-model-v1.";
@@ -115,6 +116,44 @@ export function normalizePiThinkingOptions(
   );
 }
 
+/** Same rule as Pi `getSupportedThinkingLevels`: null mappings drop a level; xhigh/max need an explicit map. */
+export function piSupportedThinkingOptionIds(
+  model: Pick<PiNativeModel, "reasoning" | "thinkingLevelMap">,
+): HarnessThinkingOptionId[] {
+  if (!model.reasoning) {
+    const off = PI_DRAFT_THINKING_OPTION_IDS.find((id) => id === "off");
+    return off ? [off] : [];
+  }
+  return PI_DRAFT_THINKING_OPTION_IDS.filter((level) => {
+    const mapped = model.thinkingLevelMap?.[level];
+    if (mapped === null) return false;
+    if (level === "xhigh" || level === "max") return mapped !== undefined;
+    return true;
+  });
+}
+
+function unionThinkingOptionIds(
+  groups: readonly (readonly HarnessThinkingOptionId[])[],
+): HarnessThinkingOptionId[] {
+  const seen = new Set<string>();
+  const out: HarnessThinkingOptionId[] = [];
+  for (const id of PI_DRAFT_THINKING_OPTION_IDS) {
+    if (groups.some((group) => group.includes(id)) && !seen.has(id)) {
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  for (const group of groups) {
+    for (const id of group) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        out.push(id);
+      }
+    }
+  }
+  return out;
+}
+
 export function normalizePiModelCatalog(
   nativeModels: readonly PiNativeModel[],
   effectiveModel: PiNativeModelRef | null,
@@ -123,13 +162,13 @@ export function normalizePiModelCatalog(
 ): HarnessModelCatalog {
   const byRef = new Map<
     string,
-    { model: HarnessModelCatalog["models"][number]; reasoning: boolean }
+    { model: HarnessModelCatalog["models"][number]; native: PiNativeModel }
   >();
   for (const native of nativeModels) {
     const ref = encodePiModelRef(native);
     const existing = byRef.get(ref.id);
     if (existing) {
-      if (existing.reasoning !== native.reasoning) {
+      if (existing.native.reasoning !== native.reasoning) {
         throw new Error("Pi duplicate Model entries disagree on reasoning capability");
       }
       continue;
@@ -139,7 +178,7 @@ export function normalizePiModelCatalog(
         ref,
         label: `${native.provider} / ${native.id}`,
       },
-      reasoning: native.reasoning,
+      native,
     });
   }
   const defaultModel = effectiveModel ? encodePiModelRef(effectiveModel) : undefined;
@@ -157,24 +196,20 @@ export function normalizePiModelCatalog(
     throw new Error("Pi did not report an effective Thinking option");
   }
 
-  const thinkingOptions = thinkingLevels
-    ? normalizePiThinkingOptions(PI_DRAFT_THINKING_OPTION_IDS)
-    : [];
-  const allThinkingOptionIds = thinkingOptions.map(({ id }) => id);
-  const offThinkingOptionId = thinkingOptions.find(({ id }) => id === "off")?.id;
   const models = [...byRef.values()]
-    .map(({ model, reasoning }) => ({
+    .map(({ model, native }) => ({
       ...model,
-      supportedThinkingOptionIds: reasoning
-        ? allThinkingOptionIds
-        : offThinkingOptionId
-          ? [offThinkingOptionId]
-          : [],
+      supportedThinkingOptionIds: thinkingLevels ? piSupportedThinkingOptionIds(native) : [],
     }))
     .sort(
       (left, right) =>
         compareText(left.label, right.label) || compareText(left.ref.id, right.ref.id),
     );
+  const thinkingOptions = thinkingLevels
+    ? normalizePiThinkingOptions(
+        unionThinkingOptionIds(models.map((model) => model.supportedThinkingOptionIds ?? [])),
+      )
+    : [];
   const defaultThinkingOptionId = thinkingOptions.find(
     ({ id }) => id === effectiveThinkingOptionId,
   )?.id;

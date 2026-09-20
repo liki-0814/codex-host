@@ -15,6 +15,7 @@ import {
   type ExternalRendererAgent,
   type RendererAgent,
 } from "./agent-selection-state.js";
+import { modelVisibilityId } from "./renderer-model-visibility.js";
 
 export const RENDERER_NEW_THREAD_PREFERENCE_KEY = "codexhost.new-thread-preference.v1";
 
@@ -119,7 +120,9 @@ export function readNewThreadExternalConfigurationPreference(
       return undefined;
     }
   }
-  const catalogModel = catalog.models.find(({ ref }) => ref.id === preference.model.id);
+  const catalogModel = catalog.models.find(
+    ({ ref }) => modelVisibilityId(ref) === modelVisibilityId(preference.model),
+  );
   if (!catalogModel) return undefined;
   const thinkingOptionId =
     preference.thinkingOptionId &&

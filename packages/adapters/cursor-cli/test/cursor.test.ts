@@ -350,6 +350,116 @@ describe("Cursor turn lifecycle", () => {
       f.output.filter((x) => x.kind === "event" && x.event.type === "turn.completed"),
     ).toHaveLength(1);
   });
+  it("keeps a completed answer when Cursor streams WritableIterable closed after it", async () => {
+    const f = session();
+    f.transport.action = async (text, callbacks) => {
+      callbacks.update({
+        sessionId: f.transport.sessionId,
+        update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "PONG" } },
+      });
+      callbacks.update({
+        sessionId: f.transport.sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "\n\nError: RetriableError: WritableIterable is closed" },
+        },
+      });
+      native.turns.push({ id: randomUUID(), text });
+      return { stopReason: "end_turn" };
+    };
+    await f.session.execute(start);
+    await vi.waitFor(() =>
+      expect(f.output.some((x) => x.kind === "event" && x.event.type === "turn.completed")).toBe(
+        true,
+      ),
+    );
+    await f.session.close();
+    await f.done;
+    const terminal = f.output.find((x) => x.kind === "event" && x.event.type === "turn.completed");
+    expect(terminal).toMatchObject({ event: { outcome: { status: "succeeded" } } });
+    expect(
+      f.output.some(
+        (x) =>
+          x.kind === "event" &&
+          x.event.type === "item.updated" &&
+          x.event.update.type === "text.append" &&
+          x.event.update.text.includes("WritableIterable"),
+      ),
+    ).toBe(false);
+  });
+
+  it("retries an empty WritableIterable closed prompt when native history did not persist", async () => {
+    const f = session();
+    let calls = 0;
+    f.transport.action = async (text, callbacks) => {
+      calls += 1;
+      if (calls === 1) {
+        callbacks.update({
+          sessionId: f.transport.sessionId,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "\n\nError: RetriableError: WritableIterable is closed" },
+          },
+        });
+        return { stopReason: "end_turn" };
+      }
+      callbacks.update({
+        sessionId: f.transport.sessionId,
+        update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "recovered" } },
+      });
+      native.turns.push({ id: randomUUID(), text });
+      return { stopReason: "end_turn" };
+    };
+    await f.session.execute(start);
+    await vi.waitFor(() =>
+      expect(f.output.some((x) => x.kind === "event" && x.event.type === "turn.completed")).toBe(
+        true,
+      ),
+    );
+    await f.session.close();
+    await f.done;
+    expect(calls).toBe(2);
+    expect(
+      f.output.find((x) => x.kind === "event" && x.event.type === "turn.completed"),
+    ).toMatchObject({ event: { outcome: { status: "succeeded" } } });
+  });
+
+  it("fails retryable without faulting the Session when the closed stream already persisted", async () => {
+    const f = session();
+    f.transport.action = async (text, callbacks) => {
+      callbacks.update({
+        sessionId: f.transport.sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "\n\nError: RetriableError: WritableIterable is closed" },
+        },
+      });
+      native.turns.push({ id: randomUUID(), text });
+      return { stopReason: "end_turn" };
+    };
+    await f.session.execute(start);
+    await vi.waitFor(() =>
+      expect(f.output.some((x) => x.kind === "event" && x.event.type === "turn.completed")).toBe(
+        true,
+      ),
+    );
+    await f.session.close();
+    await f.done;
+    expect(
+      f.output.find((x) => x.kind === "event" && x.event.type === "turn.completed"),
+    ).toMatchObject({
+      event: {
+        outcome: {
+          status: "failed",
+          error: { code: "nativeFailure", retryable: true },
+        },
+      },
+    });
+    expect(f.output.some((x) => x.kind === "event" && x.event.type === "session.faulted")).toBe(
+      false,
+    );
+  });
+
   it("reports process failure without a guessed native turn ID", async () => {
     const f = session();
     f.transport.action = async () => {

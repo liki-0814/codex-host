@@ -50,6 +50,7 @@ import {
 import { decodeCursorPermission } from "./permission-modes.js";
 import {
   CursorTransport,
+  type CursorCallbacks,
   type CursorSessionInfo,
   type CursorTransportOptions,
 } from "./transport.js";
@@ -60,6 +61,7 @@ import {
   type CursorNativeTurn,
 } from "./native-history.js";
 import { CursorTurnOutput, cursorSnapshot } from "./projection.js";
+import { isCursorWritableIterableClosed } from "./stream-error.js";
 import { CURSOR_COMMAND_CATALOG, cursorCommands, cursorCommandPrompt } from "./slash-commands.js";
 import { CursorInteractions } from "./interactions.js";
 import { forkCursorSession, validateCursorFork } from "./fork.js";
@@ -76,6 +78,13 @@ export function cursorError(error: unknown): HarnessError {
   const message = sanitizeDiagnosticTail(
     error instanceof Error ? error.message : "Cursor operation failed",
   );
+  if (isCursorWritableIterableClosed(message)) {
+    return {
+      code: "nativeFailure",
+      message: "Cursor stream closed (WritableIterable)",
+      retryable: true,
+    };
+  }
   const code = /not installed/iu.test(message)
     ? "notInstalled"
     : /auth|not logged in|login/iu.test(message)
@@ -721,34 +730,52 @@ export class CursorSession implements HarnessSession {
         this.requestedModel = this.initialState.effectiveModel;
       }
       if (this.#active?.cancelled) throw new Error("Cursor turn cancelled before prompting");
-      const result = await this.transport.prompt(
-        command.input.map((part) => part.text).join("\n"),
-        {
-          update: (event) => output.update(event),
-          permission: (request) => this.#interactions.permission(command.turnId, request),
-          extension: (method, params) =>
-            Promise.resolve(
-              output.subagents.extension(method, params) ??
-                this.#interactions.extension(command.turnId, method, params),
-            ),
-          notification: (method, params) => {
-            output.subagents.extension(method, params);
-          },
+      const prompt = command.input.map((part) => part.text).join("\n");
+      const callbacks: CursorCallbacks = {
+        update: (event) => output.update(event),
+        permission: (request) => this.#interactions.permission(command.turnId, request),
+        extension: (method, params) =>
+          Promise.resolve(
+            output.subagents.extension(method, params) ??
+              this.#interactions.extension(command.turnId, method, params),
+          ),
+        notification: (method, params) => {
+          output.subagents.extension(method, params);
         },
-      );
+      };
+      let result = await this.transport.prompt(prompt, callbacks);
+      if (
+        !this.#active?.cancelled &&
+        output.sawWritableIterableClosed() &&
+        !output.hasVisibleAssistantText() &&
+        this.#native(this.#fresh).length === before.length
+      ) {
+        result = await this.transport.prompt(prompt, callbacks);
+      }
+      const streamClosed =
+        output.sawWritableIterableClosed() && !output.hasVisibleAssistantText();
       outcome =
         this.#active?.cancelled || result.stopReason === "cancelled"
           ? { status: "cancelled" }
-          : result.stopReason === "end_turn"
-            ? { status: "succeeded" }
-            : {
+          : streamClosed
+            ? {
                 status: "failed",
                 error: {
                   code: "nativeFailure",
-                  message: `Cursor stopped: ${result.stopReason}`,
-                  retryable: false,
+                  message: "Cursor stream closed (WritableIterable)",
+                  retryable: true,
                 },
-              };
+              }
+            : result.stopReason === "end_turn"
+              ? { status: "succeeded" }
+              : {
+                  status: "failed",
+                  error: {
+                    code: "nativeFailure",
+                    message: `Cursor stopped: ${result.stopReason}`,
+                    retryable: false,
+                  },
+                };
     } catch (error) {
       fault = cursorError(error);
       outcome = this.#active?.cancelled

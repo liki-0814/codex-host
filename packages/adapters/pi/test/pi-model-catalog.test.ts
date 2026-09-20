@@ -44,10 +44,67 @@ describe("Pi Model Catalog normalization", () => {
       "low",
       "medium",
       "high",
+    ]);
+    expect(catalog.models[0]?.supportedThinkingOptionIds).toEqual(["off"]);
+  });
+
+  it("assigns per-model Thinking options from Pi thinkingLevelMap", () => {
+    const catalog = normalizePiModelCatalog(
+      [
+        {
+          provider: "openai-codex",
+          id: "gpt-6-astra",
+          reasoning: true,
+          thinkingLevelMap: {
+            off: null,
+            minimal: "low",
+            low: "low",
+            medium: "medium",
+            high: "high",
+            xhigh: "xhigh",
+            max: "max",
+          },
+        },
+        {
+          provider: "kimi-coding",
+          id: "k3",
+          reasoning: true,
+          thinkingLevelMap: {
+            off: null,
+            minimal: null,
+            low: "low",
+            medium: null,
+            high: "high",
+            xhigh: null,
+            max: "max",
+          },
+        },
+        { provider: "plain", id: "chat", reasoning: false },
+      ],
+      { provider: "openai-codex", id: "gpt-6-astra" },
+      [harnessThinkingOptionIdSchema.parse("xhigh")],
+      harnessThinkingOptionIdSchema.parse("xhigh"),
+    );
+
+    expect(
+      catalog.models.find((model) => model.label === "openai-codex / gpt-6-astra")
+        ?.supportedThinkingOptionIds,
+    ).toEqual(["minimal", "low", "medium", "high", "xhigh", "max"]);
+    expect(
+      catalog.models.find((model) => model.label === "kimi-coding / k3")?.supportedThinkingOptionIds,
+    ).toEqual(["low", "high", "max"]);
+    expect(
+      catalog.models.find((model) => model.label === "plain / chat")?.supportedThinkingOptionIds,
+    ).toEqual(["off"]);
+    expect(catalog.thinkingOptions.map(({ id }) => id)).toEqual([
+      "off",
+      "minimal",
+      "low",
+      "medium",
+      "high",
       "xhigh",
       "max",
     ]);
-    expect(catalog.models[0]?.supportedThinkingOptionIds).toEqual(["off"]);
   });
 
   it("normalizes only Pi-reported Thinking levels and keeps unknown labels Adapter-owned", () => {
