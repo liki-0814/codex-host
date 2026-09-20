@@ -6,6 +6,7 @@ vi.mock("../../src/settings/icons.js", () => ({
 }));
 
 import {
+  accountIdentityLabel,
   renderAccountResetCredits,
   renderAccountUsage as renderUsage,
   resetCreditDetailLine,
@@ -186,6 +187,16 @@ describe("Account limit windows", () => {
       if (status === "loading")
         expect(elements(result).some((el) => el.attributes.get("aria-busy") === "true")).toBe(true);
     }
+  });
+});
+
+describe("Account identity labels", () => {
+  it("drops the leading window from the identity column", () => {
+    expect(accountIdentityLabel("Gemini Models · 5-hour window")).toBe("Gemini Models");
+    expect(accountIdentityLabel("Gemini Models · Weekly window")).toBe("Gemini Models");
+    expect(accountIdentityLabel("Kimi Code · 5-hour window")).toBe("Kimi Code");
+    expect(accountIdentityLabel("Antigravity CLI")).toBe("Antigravity CLI");
+    expect(accountIdentityLabel(undefined)).toBeUndefined();
   });
 });
 

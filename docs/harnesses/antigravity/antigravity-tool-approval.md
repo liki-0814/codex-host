@@ -1,13 +1,15 @@
 # Antigravity Permissions
 
-Antigravity exposes only **Skip permissions (dangerous)**, which is also the
-new-session default. Every Turn starts agy with its native
-`--dangerously-skip-permissions` flag. codexhost does not add tool approvals,
-allow/ask/deny matching, a read-only allowlist, or workspace path restrictions.
+Antigravity exposes two execution modes, **Agent** (`--mode=accept-edits`) and
+**Plan** (`--mode=plan`). Both start every Turn with native
+`--dangerously-skip-permissions`. Plan prepends the CLI planning prefix; it is
+not a Host approval gate and may still write files. codexhost does not add tool
+approvals, allow/ask/deny matching, a read-only allowlist, or workspace path
+restrictions.
 Use this Harness only in an environment where unrestricted tool execution is
 acceptable. This does not grant administrator privileges or bypass OS controls.
 
-## Why only Skip permissions?
+## Why always Skip permissions?
 
 Native agy 1.1.27 print mode cannot consume interactive permission responses.
 The previous Configured permissions mode could therefore deny a tool and leave
@@ -44,10 +46,11 @@ revalidated after CLI updates.
 
 ## Validation
 
-Focused tests cover the single dangerous/default mode, rejection of legacy
-selections, native skip startup without permission probes, and 160 ordinary tool
-calls followed by a Desktop Question in one Turn. Existing Question tests cover
-responses, expiry, cancellation, authentication, and cleanup.
+Focused tests cover Agent and Plan (both dangerous; Agent is default),
+`--mode=plan` startup, rejection of legacy approval selections, native skip
+startup without permission probes, and 160 ordinary tool calls followed by a
+Desktop Question in one Turn. Existing Question tests cover responses, expiry,
+cancellation, authentication, and cleanup.
 
 The long-Turn test uses a stand-in CLI to verify Adapter wiring, not to establish
 agy's native permission-rule semantics. The obsolete opt-in Desktop approval

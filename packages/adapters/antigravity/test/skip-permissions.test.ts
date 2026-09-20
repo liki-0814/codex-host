@@ -22,6 +22,7 @@ if (args.includes("models")) {
 }
 if (args.includes("--print=/usage")) process.exit(0);
 if (!args.includes("--dangerously-skip-permissions")) throw Error("Missing native skip flag");
+if (args[args.indexOf("--mode") + 1] !== "accept-edits") throw Error("Expected default --mode=accept-edits");
 if (args.some(arg => arg === "--print=/config" || arg === "--print=/hooks")) throw Error("Unexpected permission probe");
 const config = JSON.parse(fs.readFileSync(path.join(args[args.lastIndexOf("--add-dir") + 1], ".agents", "hooks.json"), "utf8"));
 const handlers = Object.values(config).flatMap(hook => hook.PreToolUse);

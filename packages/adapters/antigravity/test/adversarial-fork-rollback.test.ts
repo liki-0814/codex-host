@@ -1114,15 +1114,11 @@ describe("Empirical Adversarial Challenges: Fork & Rollback", () => {
         // Verify configuration was preserved
         expect(forkA.value.initialState.effectiveModel).toEqual(model);
         expect(forkA.value.initialState.effectiveThinkingOptionId).toBe(thinkingOptionId);
-        expect(forkA.value.initialState.effectivePermissionModeId).toBe(
-          "dangerously-skip-permissions",
-        );
+        expect(forkA.value.initialState.effectivePermissionModeId).toBe("accept-edits");
 
         expect(forkB.value.initialState.effectiveModel).toEqual(model);
         expect(forkB.value.initialState.effectiveThinkingOptionId).toBe(thinkingOptionId);
-        expect(forkB.value.initialState.effectivePermissionModeId).toBe(
-          "dangerously-skip-permissions",
-        );
+        expect(forkB.value.initialState.effectivePermissionModeId).toBe("accept-edits");
 
         await forkA.value.close();
         await forkB.value.close();

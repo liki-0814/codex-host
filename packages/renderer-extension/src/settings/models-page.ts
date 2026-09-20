@@ -22,6 +22,7 @@ const HARNESSES = [
   ["kimi-code", "Kimi Code"],
   ["cursor-cli", "Cursor"],
   ["grok", "Grok"],
+  ["antigravity", "Antigravity"],
 ] as const;
 
 export function createModelsSettingsPage(

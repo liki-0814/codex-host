@@ -71,6 +71,7 @@ const CHINESE_PERMISSION_MODE_LABELS = new Map<string, string>([
   ["Full access (dangerous)", "完全访问（危险）"],
   ["Configured permissions", "使用已配置权限"],
   ["Skip permissions", "跳过权限检查"],
+  ["Agent", "Agent"],
   ["Always Ask", "始终询问"],
   ["Accept Edits", "接受编辑"],
   ["Plan", "规划模式"],
@@ -116,6 +117,14 @@ const CHINESE_PERMISSION_MODE_DESCRIPTIONS = new Map<string, string>([
     "使用 Antigravity CLI 权限规则；无界面运行时安全拒绝需要交互确认的请求。",
   ],
   ["Auto-approve every Antigravity CLI tool action.", "自动批准所有 Antigravity CLI 工具操作。"],
+  [
+    "Run Antigravity with --mode=accept-edits and --dangerously-skip-permissions. Files are written without Host review.",
+    "使用 --mode=accept-edits 并跳过工具审批。Host 不审文件写入。",
+  ],
+  [
+    "Run Antigravity with --mode=plan and --dangerously-skip-permissions. The CLI plans first; headless does not wait for Host approval and may still write files.",
+    "使用 --mode=plan 并跳过工具审批。CLI 会先规划；headless 不等 Host 批准，仍可能写文件。",
+  ],
   ["Prompts for permission on first use of each tool", "首次使用每种工具时请求权限。"],
   [
     "Automatically accepts file edit permissions for the session",

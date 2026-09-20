@@ -43,6 +43,9 @@ export const SKILL_DIRECTORIES: readonly SkillDirectoryDefinition[] = Object.fre
   // Qoder loads `<home>/.agents/skills` when loadFromAgentsDirectory is on, which
   // is its default.
   { harnessId: "qoder", segments: [".qoder", "skills"], access: "native" },
+  // Antigravity reads workspace `.agents/skills` and global
+  // `~/.gemini/config/skills`. https://www.antigravity.google/docs/skills/
+  { harnessId: "antigravity", segments: [".gemini", "config", "skills"], access: "native" },
 ]);
 
 const SKILL_MANIFEST = "SKILL.md";

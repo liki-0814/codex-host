@@ -212,6 +212,26 @@ describe("Renderer Permission Mode picker presentation", () => {
       zhDescription: "自动批准所有 Antigravity CLI 工具操作。",
     },
     {
+      harness: "AGY",
+      id: "accept-edits",
+      nativeLabel: "Agent",
+      en: "Agent",
+      zh: "Agent",
+      description:
+        "Run Antigravity with --mode=accept-edits and --dangerously-skip-permissions. Files are written without Host review.",
+      zhDescription: "使用 --mode=accept-edits 并跳过工具审批。Host 不审文件写入。",
+    },
+    {
+      harness: "AGY",
+      id: "plan",
+      nativeLabel: "Plan",
+      en: "Plan",
+      zh: "规划模式",
+      description:
+        "Run Antigravity with --mode=plan and --dangerously-skip-permissions. The CLI plans first; headless does not wait for Host approval and may still write files.",
+      zhDescription: "使用 --mode=plan 并跳过工具审批。CLI 会先规划；headless 不等 Host 批准，仍可能写文件。",
+    },
+    {
       harness: "CodeBuddy",
       id: "default",
       nativeLabel: "Always Ask",

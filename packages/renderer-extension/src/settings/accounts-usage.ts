@@ -80,7 +80,7 @@ export function resetCreditDetailLine(
     .replace("{time}", formatAccountCreditsReset(expiresAt, messages.locale, now));
 }
 
-type AccountUsagePeriod = "five_hour" | "seven_day";
+export type AccountUsagePeriod = "five_hour" | "seven_day";
 
 interface AccountUsageWindow {
   readonly amount?: Pick<AccountCreditsSnapshot, "used" | "limit" | "unit">;
@@ -113,7 +113,7 @@ function comparisonPeriod(
   return null;
 }
 
-function scopedUsageProduct(product: string): {
+export function scopedUsageProduct(product: string): {
   scope: string;
   period: AccountUsagePeriod;
 } | null {
@@ -130,6 +130,12 @@ function scopedUsageProduct(product: string): {
     if (scope) return { scope, period };
   }
   return null;
+}
+
+/** Identity column shows the product, not the leading window already drawn as meters. */
+export function accountIdentityLabel(label: string | undefined): string | undefined {
+  if (!label) return undefined;
+  return scopedUsageProduct(label)?.scope ?? label;
 }
 
 /** Generic limits occupy the first row; related scoped limits add aligned quota-only rows. */

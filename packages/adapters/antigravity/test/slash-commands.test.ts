@@ -69,38 +69,11 @@ describe("Antigravity Slash Commands Capability", () => {
       }
     });
 
-    it("conforms to harnessCommandCatalogSchema and includes all required commands", () => {
+    it("conforms to harnessCommandCatalogSchema without Composer slash commands", () => {
       const parsed = harnessCommandCatalogSchema.safeParse(ANTIGRAVITY_COMMAND_CATALOG);
       expect(parsed.success).toBe(true);
-
-      const commandInvocations = ANTIGRAVITY_COMMAND_CATALOG.commands.map((c) => c.invocation);
-      const expectedInvocations = [
-        "/plan",
-        "/goal",
-        "/browser",
-        "/grill-me",
-        "/boost",
-        "/learn",
-        "/schedule",
-        "/help",
-      ];
-      for (const expected of expectedInvocations) {
-        expect(commandInvocations).toContain(expected);
-      }
-
-      for (const command of ANTIGRAVITY_COMMAND_CATALOG.commands) {
-        expect(command.id).toMatch(/^antigravity\./);
-        expect(command.argumentMode).toBe("text");
-        expect(command.label.length).toBeGreaterThan(0);
-        expect(command.description?.length).toBeGreaterThan(0);
-      }
-    });
-
-    it("finds commands by ID, invocation, or suffix", () => {
-      expect(findAntigravityCommandDescriptor("antigravity.plan")?.invocation).toBe("/plan");
-      expect(findAntigravityCommandDescriptor("/plan")?.id).toBe("antigravity.plan");
-      expect(findAntigravityCommandDescriptor("plan")?.id).toBe("antigravity.plan");
-      expect(findAntigravityCommandDescriptor("/grill-me")?.id).toBe("antigravity.grill-me");
+      expect(ANTIGRAVITY_COMMAND_CATALOG.commands).toEqual([]);
+      expect(findAntigravityCommandDescriptor("/plan")).toBeUndefined();
       expect(findAntigravityCommandDescriptor("unknown")).toBeUndefined();
     });
   });
@@ -122,161 +95,6 @@ describe("Antigravity Slash Commands Capability", () => {
         expect(catalogResult.ok).toBe(true);
         if (catalogResult.ok) {
           expect(catalogResult.value.commands).toEqual(ANTIGRAVITY_COMMAND_CATALOG.commands);
-        }
-        await session.close();
-      } finally {
-        await adapter.close();
-        await cleanup();
-      }
-    });
-
-    it("executes slash command with argument text and delegates to turn.start", async () => {
-      const streamLines = [
-        JSON.stringify({
-          event: "init",
-          init: { permission_mode: "configured" },
-          conversation_id: "conv-cmd-1",
-        }),
-        JSON.stringify({
-          event: "result",
-          result: {
-            conversation_id: "conv-cmd-1",
-            status: "SUCCESS",
-            num_turns: 1,
-            response: "Plan created.",
-          },
-        }),
-      ];
-      const { command, cwd, cleanup } = await fakeStreamingAgy(streamLines);
-      const adapter = new AntigravityAdapter({ command });
-      try {
-        const opened = await adapter.open({ kind: "create", cwd });
-        expect(opened.ok).toBe(true);
-        if (!opened.ok) return;
-
-        const session = opened.value;
-        expect(session.commands).toBeDefined();
-        if (!session.commands) return;
-        const turnId = hostTurnIdSchema.parse("turn-cmd-1");
-
-        const drainPromise = drainEvents(session.outputs);
-        const executeResult = await session.commands.execute({
-          turnId,
-          commandId: "antigravity.plan",
-          arguments: { text: "refactor authentication module" },
-        });
-
-        expect(executeResult).toEqual({ ok: true, value: { turnId } });
-        await drainPromise;
-
-        const snapshot = await session.readSnapshot();
-        expect(snapshot.ok).toBe(true);
-        if (snapshot.ok) {
-          expect(snapshot.value.turns).toHaveLength(1);
-          expect(snapshot.value.turns[0]?.input).toEqual([
-            { type: "text", text: "/plan refactor authentication module" },
-          ]);
-        }
-        await session.close();
-      } finally {
-        await adapter.close();
-        await cleanup();
-      }
-    });
-
-    it("executes bare slash command without arguments", async () => {
-      const streamLines = [
-        JSON.stringify({
-          event: "init",
-          init: { permission_mode: "configured" },
-          conversation_id: "conv-cmd-2",
-        }),
-        JSON.stringify({
-          event: "result",
-          result: {
-            conversation_id: "conv-cmd-2",
-            status: "SUCCESS",
-            num_turns: 1,
-            response: "Showing help.",
-          },
-        }),
-      ];
-      const { command, cwd, cleanup } = await fakeStreamingAgy(streamLines);
-      const adapter = new AntigravityAdapter({ command });
-      try {
-        const opened = await adapter.open({ kind: "create", cwd });
-        expect(opened.ok).toBe(true);
-        if (!opened.ok) return;
-
-        const session = opened.value;
-        expect(session.commands).toBeDefined();
-        if (!session.commands) return;
-        const turnId = hostTurnIdSchema.parse("turn-cmd-2");
-
-        const drainPromise = drainEvents(session.outputs);
-        const executeResult = await session.commands.execute({
-          turnId,
-          commandId: "/help",
-        });
-
-        expect(executeResult).toEqual({ ok: true, value: { turnId } });
-        await drainPromise;
-
-        const snapshot = await session.readSnapshot();
-        expect(snapshot.ok).toBe(true);
-        if (snapshot.ok) {
-          expect(snapshot.value.turns[0]?.input).toEqual([{ type: "text", text: "/help" }]);
-        }
-        await session.close();
-      } finally {
-        await adapter.close();
-        await cleanup();
-      }
-    });
-
-    it("executes slash command with trailing whitespace in argument text", async () => {
-      const streamLines = [
-        JSON.stringify({
-          event: "init",
-          init: { permission_mode: "configured" },
-          conversation_id: "conv-cmd-3",
-        }),
-        JSON.stringify({
-          event: "result",
-          result: {
-            conversation_id: "conv-cmd-3",
-            status: "SUCCESS",
-            num_turns: 1,
-            response: "Boosted.",
-          },
-        }),
-      ];
-      const { command, cwd, cleanup } = await fakeStreamingAgy(streamLines);
-      const adapter = new AntigravityAdapter({ command });
-      try {
-        const opened = await adapter.open({ kind: "create", cwd });
-        expect(opened.ok).toBe(true);
-        if (!opened.ok) return;
-
-        const session = opened.value;
-        expect(session.commands).toBeDefined();
-        if (!session.commands) return;
-        const turnId = hostTurnIdSchema.parse("turn-cmd-3");
-
-        const drainPromise = drainEvents(session.outputs);
-        const executeResult = await session.commands.execute({
-          turnId,
-          commandId: "antigravity.boost",
-          arguments: { text: "   " },
-        });
-
-        expect(executeResult).toEqual({ ok: true, value: { turnId } });
-        await drainPromise;
-
-        const snapshot = await session.readSnapshot();
-        expect(snapshot.ok).toBe(true);
-        if (snapshot.ok) {
-          expect(snapshot.value.turns[0]?.input).toEqual([{ type: "text", text: "/boost" }]);
         }
         await session.close();
       } finally {
@@ -308,48 +126,6 @@ describe("Antigravity Slash Commands Capability", () => {
           expect(result.error.code).toBe("unsupported");
           expect(result.error.message).toContain("Antigravity does not expose Harness command");
         }
-        await session.close();
-      } finally {
-        await adapter.close();
-        await cleanup();
-      }
-    });
-
-    it("rejects invalid argument types with invalidRequest error", async () => {
-      const { command, cwd, cleanup } = await fakeStreamingAgy([]);
-      const adapter = new AntigravityAdapter({ command });
-      try {
-        const opened = await adapter.open({ kind: "create", cwd });
-        expect(opened.ok).toBe(true);
-        if (!opened.ok) return;
-
-        const session = opened.value;
-        expect(session.commands).toBeDefined();
-        if (!session.commands) return;
-        const turnId = hostTurnIdSchema.parse("turn-cmd-5");
-
-        // Non-string text
-        const nonStringResult = await session.commands.execute({
-          turnId,
-          commandId: "antigravity.plan",
-          arguments: { text: 123 as unknown as string },
-        });
-        expect(nonStringResult.ok).toBe(false);
-        if (!nonStringResult.ok) {
-          expect(nonStringResult.error.code).toBe("invalidRequest");
-        }
-
-        // Unknown argument keys
-        const unknownArgResult = await session.commands.execute({
-          turnId,
-          commandId: "antigravity.plan",
-          arguments: { text: "ok", extra: "nope" } as unknown as { text: string },
-        });
-        expect(unknownArgResult.ok).toBe(false);
-        if (!unknownArgResult.ok) {
-          expect(unknownArgResult.error.code).toBe("invalidRequest");
-        }
-
         await session.close();
       } finally {
         await adapter.close();

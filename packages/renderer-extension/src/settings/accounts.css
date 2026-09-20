@@ -81,6 +81,8 @@
   flex: none;
 }
 .settings-account-toolbar input {
+  -webkit-appearance: none;
+  appearance: none;
   min-width: 80px;
   width: 210px;
   max-width: 100%;
@@ -88,10 +90,19 @@
   color: var(--settings-text);
   background: transparent;
   border: 0;
+  border-radius: 0;
+  box-shadow: none;
   font-size: 13px;
 }
 .settings-account-toolbar input::placeholder {
   color: var(--settings-muted);
+}
+.settings-account-search input::-webkit-search-decoration,
+.settings-account-search input::-webkit-search-cancel-button,
+.settings-account-search input::-webkit-search-results-button,
+.settings-account-search input::-webkit-search-results-decoration {
+  appearance: none;
+  display: none;
 }
 .settings-account-display-controls {
   display: flex;
@@ -439,6 +450,14 @@
 .settings-account-toolbar :focus-visible {
   outline: 2px solid var(--settings-focus);
   outline-offset: -2px;
+}
+.settings-account-toolbar .settings-account-search input:focus,
+.settings-account-toolbar .settings-account-search input:focus-visible {
+  outline: none;
+}
+.settings-account-search:focus-within {
+  color: var(--settings-text);
+  box-shadow: inset 0 -1px 0 var(--settings-border);
 }
 
 .settings-account-dialog {

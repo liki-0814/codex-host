@@ -9,6 +9,7 @@ import type { Readable, Writable } from "node:stream";
 
 import {
   HarnessOutputChannel,
+  nativeSessionImport,
   sanitizeDiagnosticTail,
   type HarnessAdapter,
   type HarnessError,
@@ -60,7 +61,6 @@ import {
   nativeTurnRefSchema,
   type HarnessId,
   type HarnessAccountSnapshot,
-  type HarnessPermissionModeId,
   type HarnessThinkingOptionId,
   type HostItemId,
   type NativeSessionRef,
@@ -77,6 +77,8 @@ import {
 } from "./model-catalog.js";
 import {
   ANTIGRAVITY_PERMISSION_MODE_CATALOG,
+  antigravityModeArguments,
+  antigravityPermissionModeId,
   decodeAntigravityPermissionModeId,
   type AntigravityPermissionMode,
 } from "./permission-modes.js";
@@ -87,7 +89,12 @@ import {
   requestAntigravityTrajectorySteps,
   type AntigravityCodeAction,
 } from "./code-action-diff.js";
-import { fetchAntigravityQuota, type AntigravityQuotaSnapshot } from "./quota.js";
+import {
+  antigravityAccountIdentityLabel,
+  fetchAntigravityQuota,
+  type AntigravityQuotaSnapshot,
+} from "./quota.js";
+import { listAntigravityImportCandidates } from "./session-import.js";
 import { AntigravityQuestionBridge } from "./question-bridge.js";
 import { AntigravitySubagents } from "./subagents.js";
 import { nativeSubagentIdSchema, readSubagentTranscript } from "./subagent-transcript.js";
@@ -694,7 +701,7 @@ class AntigravitySession implements HarnessSession {
     ];
     if (this.#nativeRef) arguments_.unshift("--conversation", this.#nativeRef.nativeSessionId);
     arguments_.push(...antigravityModelArguments(this.#model, this.#thinkingOptionId));
-    arguments_.push("--dangerously-skip-permissions");
+    arguments_.push(...antigravityModeArguments(this.#permissionMode));
     arguments_.push("--add-dir", this.#cwd);
     arguments_.push("--add-dir", questions.directory);
     arguments_.push("--log-file", logPath);
@@ -1362,9 +1369,7 @@ class AntigravitySession implements HarnessSession {
       ...(this.#model ? { effectiveModel: this.#model } : {}),
       ...(this.#thinkingOptionId ? { effectiveThinkingOptionId: this.#thinkingOptionId } : {}),
       ...(availableThinkingOptions ? { availableThinkingOptions } : {}),
-      effectivePermissionModeId: ANTIGRAVITY_PERMISSION_MODE_CATALOG.modes.find(
-        ({ id }) => id === this.#permissionMode,
-      )?.id as HarnessPermissionModeId,
+      effectivePermissionModeId: antigravityPermissionModeId(this.#permissionMode),
     };
   }
 
@@ -1446,6 +1451,11 @@ export class AntigravityAdapter implements HarnessAdapter {
   #quotaCwd: string | null = null;
   #quotaRefresh: Promise<AntigravityQuotaSnapshot | null> | null = null;
   readonly #quotaAbort = new AbortController();
+  readonly sessionImport = nativeSessionImport(
+    antigravityHarnessId,
+    (signal) => listAntigravityImportCandidates(this.#environment, signal),
+    () => this.#closed,
+  );
 
   constructor(options: AntigravityAdapterOptions = {}) {
     this.#command = options.command;
@@ -1534,6 +1544,7 @@ export class AntigravityAdapter implements HarnessAdapter {
     const snapshot = await this.refreshCredits();
     if (!snapshot) return null;
     return {
+      label: antigravityAccountIdentityLabel(snapshot.label),
       credits: {
         label: snapshot.label,
         usedPercent: snapshot.usedPercent,
@@ -1591,7 +1602,7 @@ export class AntigravityAdapter implements HarnessAdapter {
 
   async open(input: OpenSessionInput): Promise<HarnessResult<HarnessSession>> {
     if (this.#closed) return { ok: false, error: invalidState("Antigravity Adapter is closed") };
-    let permissionMode: AntigravityPermissionMode = "dangerously-skip-permissions";
+    let permissionMode: AntigravityPermissionMode = "accept-edits";
     if (input.kind !== "fork" && input.permissionModeId) {
       try {
         permissionMode = decodeAntigravityPermissionModeId(input.permissionModeId);
@@ -1775,6 +1786,9 @@ export class AntigravityAdapter implements HarnessAdapter {
     this.#quota = null;
     this.#quotaCwd = null;
     this.#quotaAbort.abort();
-    await Promise.all([...this.#sessions].map((session) => session.close()));
+    await Promise.all([
+      this.sessionImport.close(),
+      ...[...this.#sessions].map((session) => session.close()),
+    ]);
   }
 }

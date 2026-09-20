@@ -29,6 +29,7 @@ import {
   permissionDeniedTurnError,
   resolveAntigravityContextWindow,
 } from "../src/index.js";
+import { antigravityAccountIdentityLabel } from "../src/quota.js";
 
 const FETCHED_AT = "2026-08-31T14:40:00.000Z";
 
@@ -133,6 +134,7 @@ describe("Antigravity Adapter", () => {
     const adapter = new AntigravityAdapter({ command: fixture.command, environment: process.env });
     try {
       expect(await adapter.inspectAccount()).toMatchObject({
+        label: "Gemini Models",
         credits: { label: "Gemini Models · 5-hour window", usedPercent: 0 },
       });
       expect(adapter.credits()).not.toBeNull();
@@ -161,7 +163,7 @@ describe("Antigravity Adapter", () => {
         ok: false,
         error: {
           code: "invalidRequest",
-          message: expect.stringContaining("Explicitly select Skip permissions"),
+          message: expect.stringContaining("Agent and Plan"),
         },
       };
       try {
@@ -181,9 +183,7 @@ describe("Antigravity Adapter", () => {
         ).toMatchObject(rejected);
         const opened = await adapter.open({ kind: "create", cwd });
         if (!opened.ok) throw new Error(opened.error.message);
-        expect(opened.value.initialState?.effectivePermissionModeId).toBe(
-          "dangerously-skip-permissions",
-        );
+        expect(opened.value.initialState?.effectivePermissionModeId).toBe("accept-edits");
         expect(
           await opened.value.execute({ type: "permissionMode.select", permissionModeId }),
         ).toMatchObject(rejected);
@@ -193,6 +193,13 @@ describe("Antigravity Adapter", () => {
             permissionModeId: harnessPermissionModeIdSchema.parse("dangerously-skip-permissions"),
           }),
         ).toMatchObject({ ok: true });
+        expect(opened.value.initialState?.effectivePermissionModeId).toBe("accept-edits");
+        expect(
+          await opened.value.execute({
+            type: "permissionMode.select",
+            permissionModeId: harnessPermissionModeIdSchema.parse("plan"),
+          }),
+        ).toMatchObject({ ok: true });
       } finally {
         await adapter.close();
         await cleanup();
@@ -200,17 +207,74 @@ describe("Antigravity Adapter", () => {
     },
   );
 
-  it("advertises only native Skip permissions, marked dangerous and default", async () => {
+  it("starts turns with --mode=plan when Plan is selected", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "codexhost-agy-mode-"));
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "codexhost-agy-mode-cwd-"));
+    const log = path.join(directory, "args.log");
+    const command = path.join(directory, "agy");
+    await writeFile(
+      command,
+      `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + "\\n");
+if (args.includes("models")) {
+  process.stdout.write("gemini-3.1-pro-high\\tGemini 3.1 Pro High\\n");
+  process.exit(0);
+}
+if (args.some((arg) => arg.includes("/usage"))) process.exit(0);
+process.stdout.write(JSON.stringify({ event: "init", conversation_id: "mode-plan", init: { permission_mode: "always-proceed" } }) + "\\n");
+process.stdout.write(JSON.stringify({ event: "result", result: { conversation_id: "mode-plan", status: "SUCCESS", num_turns: 1, response: "ok" } }) + "\\n");
+`,
+    );
+    await chmod(command, 0o755);
+    const adapter = new AntigravityAdapter({ command });
+    try {
+      const opened = await adapter.open({
+        kind: "create",
+        cwd,
+        permissionModeId: harnessPermissionModeIdSchema.parse("plan"),
+      });
+      if (!opened.ok) throw new Error(opened.error.message);
+      const turnId = hostTurnIdSchema.parse("turn-mode-plan");
+      const drain = opened.value.outputs[Symbol.asyncIterator]();
+      expect(
+        await opened.value.execute({
+          type: "turn.start",
+          turnId,
+          input: [{ type: "text", text: "plan this" }],
+        }),
+      ).toMatchObject({ ok: true });
+      for await (const output of { [Symbol.asyncIterator]: () => drain }) {
+        if (output.kind === "event" && output.event.type === "turn.completed") break;
+      }
+      const calls = (await readFile(log, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as string[]);
+      const turn = calls.find((args) => args.includes("--input-format"));
+      expect(turn).toEqual(expect.arrayContaining(["--mode", "plan", "--dangerously-skip-permissions"]));
+      await opened.value.close();
+    } finally {
+      await adapter.close();
+      await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      await rm(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    }
+  });
+
+  it("advertises Agent and Plan execution modes, both dangerous, defaulting to Agent", async () => {
     const { command, cwd, cleanup } = await fakeAgy(FAKE_MODELS);
     const adapter = new AntigravityAdapter({ command });
     try {
       const inspection = await adapter.inspect({ cwd });
       if (inspection.status !== "ready") throw new Error("Fixture CLI is not ready");
       expect(inspection.permissionModes).toMatchObject({
-        defaultModeId: "dangerously-skip-permissions",
-        modes: [{ id: "dangerously-skip-permissions", dangerous: true }],
+        defaultModeId: "accept-edits",
+        modes: [
+          { id: "accept-edits", label: "Agent", dangerous: true },
+          { id: "plan", label: "Plan", dangerous: true },
+        ],
       });
-      expect(inspection.permissionModes?.modes).toHaveLength(1);
     } finally {
       await adapter.close();
       await cleanup();
@@ -448,6 +512,7 @@ describe("Antigravity Adapter", () => {
     // The 5-hour window leads (it is the most actionable and resets soonest).
     // Labels come from the window, not the CLI's "… Remaining" naming, because
     // the values are consumed percentages.
+    expect(antigravityAccountIdentityLabel(snapshot?.label ?? "")).toBe("Gemini Models");
     expect(snapshot).toEqual({
       label: "Gemini Models · 5-hour window",
       usedPercent: 0,

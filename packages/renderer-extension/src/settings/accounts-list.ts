@@ -5,6 +5,7 @@ import { createRendererAgentIcon } from "../renderer-agent-icon.js";
 import { codexAccountDisplayName } from "../renderer-codex-account-options.js";
 import { createAccountDetails } from "./accounts-details.js";
 import {
+  accountIdentityLabel,
   renderAccountResetCredits,
   renderAccountUsage,
   type AccountUsageDisplay,
@@ -278,7 +279,7 @@ export function renderHarnessAccountRows(
   row.className = "settings-account-row";
   row.dataset.harnessId = account.harnessId;
   row.tabIndex = -1;
-  const name = account.email ?? account.label ?? account.harnessName;
+  const name = account.email ?? accountIdentityLabel(account.label) ?? account.harnessName;
   row.setAttribute("aria-label", name);
   const personCell = document.createElement("td");
   personCell.className = "settings-account-person-cell";
