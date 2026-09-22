@@ -25,6 +25,11 @@ The Renderer Extension SHALL install one window-scoped codexhost settings shell 
 - **WHEN** a control that Renderer does not own is inserted between the owned trigger and the start of the header action area
 - **THEN** Renderer SHALL keep the owned trigger immediately before the native action group instead of reclaiming the first position
 
+#### Scenario: Native Codex settings is open
+- **WHEN** Codex's own settings surface is visible
+- **THEN** the owned header trigger SHALL NOT stay mounted in that window's titlebar
+- **AND** it SHALL return to the verified header action position after that surface closes
+
 #### Scenario: Verified header action group is unavailable
 - **WHEN** Renderer cannot identify either a visible bounded native action group or its structurally verified empty action position
 - **THEN** it SHALL NOT place the trigger in a guessed native control or fixed overlay

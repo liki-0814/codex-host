@@ -91,6 +91,7 @@ export {
   draftPermissionMode,
   installRendererBindingProbe,
   isOwnershipSubmissionBlocked,
+  mutationMayChangeComposerTarget,
   permissionModeSelectionLocked,
   restoredThreadOwnership,
   shouldRefreshCodexAccountsForAdapterState,

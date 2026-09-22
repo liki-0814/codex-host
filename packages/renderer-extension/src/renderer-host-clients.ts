@@ -2,6 +2,7 @@ import type {
   RendererHostRoute,
   RendererHostRouting,
 } from "@codexhost/desktop-control/renderer-bindings";
+import { installRendererDelegatedThreadProject } from "./renderer-delegated-thread-project.js";
 import { createRendererModelClient, type RendererModelClient } from "./renderer-model-client.js";
 import { installRendererExternalQueue } from "./renderer-external-queue.js";
 import { installRendererExternalSteering } from "./renderer-external-steering.js";
@@ -55,6 +56,14 @@ export function createRendererHostClients(readRouting: () => RendererHostRouting
     const cleanups: (() => void)[] = [];
     entries.set(route.hostId, { route, client, cleanups });
     try {
+      // A manually ordered project keeps an explicit thread list. Record the new
+      // delegated thread there, or it will not appear in that project.
+      const notify = target.addNotificationCallback?.bind(target);
+      const projectCleanup = installRendererDelegatedThreadProject({
+        hostId: route.hostId,
+        ...(notify ? { addNotificationCallback: notify } : {}),
+      });
+      if (projectCleanup) cleanups.push(projectCleanup);
       for (const install of [installRendererExternalQueue, installRendererExternalSteering]) {
         const cleanup = install(target);
         if (cleanup) cleanups.push(cleanup);

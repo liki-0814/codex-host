@@ -19,6 +19,7 @@ import {
   lockedPermissionMode,
   permissionModeSelectionLocked,
   lateConversationTargetResolution,
+  mutationMayChangeComposerTarget,
   harnessAvailabilityDuringInspect,
   passiveHarnessAvailabilityAgents,
   refreshConnectionHosts,
@@ -1246,6 +1247,94 @@ describe("Renderer Composer DOM behavior", () => {
         locked: true,
       }),
     ).toEqual({ agent: "pi", model });
+  });
+
+  it("ignores sidebar inserts and editor typing when deciding Composer target refreshes", () => {
+    const composer = {
+      closest: (selector: string) => (selector.includes("data-codex-composer-root") ? composer : null),
+      matches: () => false,
+      querySelector: () => null,
+    };
+    const editor = {
+      closest: (selector: string) =>
+        selector.includes("textbox") || selector.includes("contenteditable") ? editor : null,
+      matches: (selector: string) =>
+        selector.includes("textbox") || selector.includes("contenteditable"),
+      querySelector: () => null,
+    };
+    const draftRow = {
+      closest: (selector: string) => (selector.includes("sidebar-thread-row") ? draftRow : null),
+      getAttribute: (name: string) =>
+        name === "data-app-action-sidebar-thread-id"
+          ? "local:client-new-thread:opaque"
+          : name === "data-app-action-sidebar-thread-host-id"
+            ? "local"
+            : name === "data-app-action-sidebar-thread-row"
+              ? ""
+              : null,
+    };
+    const boundRow = {
+      closest: (selector: string) => (selector.includes("sidebar-thread-row") ? boundRow : null),
+      getAttribute: (name: string) =>
+        name === "data-app-action-sidebar-thread-id"
+          ? "local:thread-1"
+          : name === "data-app-action-sidebar-thread-host-id"
+            ? "local"
+            : name === "data-app-action-sidebar-thread-row"
+              ? ""
+              : null,
+    };
+
+    expect(
+      mutationMayChangeComposerTarget({
+        type: "childList",
+        target: draftRow,
+        addedNodes: [draftRow],
+        removedNodes: [],
+      } as unknown as MutationRecord),
+    ).toBe(false);
+    expect(
+      mutationMayChangeComposerTarget({
+        type: "characterData",
+        target: { parentElement: draftRow },
+        addedNodes: [],
+        removedNodes: [],
+      } as unknown as MutationRecord),
+    ).toBe(false);
+    expect(
+      mutationMayChangeComposerTarget({
+        type: "characterData",
+        target: editor,
+        addedNodes: [],
+        removedNodes: [],
+      } as unknown as MutationRecord),
+    ).toBe(false);
+    expect(
+      mutationMayChangeComposerTarget({
+        type: "attributes",
+        attributeName: "data-app-action-sidebar-thread-id",
+        target: draftRow,
+        addedNodes: [],
+        removedNodes: [],
+      } as unknown as MutationRecord),
+    ).toBe(false);
+    expect(
+      mutationMayChangeComposerTarget({
+        type: "attributes",
+        attributeName: "data-app-action-sidebar-thread-id",
+        target: boundRow,
+        addedNodes: [],
+        removedNodes: [],
+      } as unknown as MutationRecord),
+    ).toBe(true);
+    expect(
+      mutationMayChangeComposerTarget({
+        type: "childList",
+        target: composer,
+        addedNodes: [composer],
+        removedNodes: [],
+      } as unknown as MutationRecord),
+    ).toBe(true);
   });
 
   it("inspects an in-place conversation transition unless the source was submitted", () => {

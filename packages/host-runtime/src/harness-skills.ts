@@ -34,18 +34,22 @@ export const SKILL_DIRECTORIES: readonly SkillDirectoryDefinition[] = Object.fre
   // Claude Code reads only its own directory. Note that this directory exists
   // even without Claude Code, because delegation-skill.ts writes into it.
   { harnessId: "claude-code", segments: [".claude", "skills"], access: "link" },
-  // Grok documents scanning `.agents/skills` at every tier.
+  // grok 1.0.34 scans `.agents/skills` at every tier, including the user tier
+  // next to `~/.grok/skills`.
   { harnessId: "grok", segments: [".grok", "skills"], access: "native" },
-  // Kimi lists `.agents/skills` as a user-scope generic source.
+  // Kimi joins `os.homedir()` with `USER_GENERIC_DIRS = [".agents/skills"]`.
   { harnessId: "kimi-code", segments: [".kimi-code", "skills"], access: "native" },
-  // Cursor loads `.agents/skills` alongside its own and third-party directories.
+  // cursor-agent joins `userHomeDirectory` with `.agents/skills` as user scope.
   { harnessId: "cursor-cli", segments: [".cursor", "skills"], access: "native" },
-  // Qoder loads `<home>/.agents/skills` when loadFromAgentsDirectory is on, which
-  // is its default.
-  { harnessId: "qoder", segments: [".qoder", "skills"], access: "native" },
-  // Antigravity reads workspace `.agents/skills` and global
-  // `~/.gemini/config/skills`. https://www.antigravity.google/docs/skills/
-  { harnessId: "antigravity", segments: [".gemini", "config", "skills"], access: "native" },
+  // Qoder always loads `~/.qoder/skills`. qodercli 1.1.59 treats `~/.agents/skills`
+  // as a compatibility path: the interactive CLI enables it by default, but SDK
+  // mode — how codexhost launches the CLI — leaves it off unless the setting is
+  // explicit. A link is what the hosted session reads.
+  { harnessId: "qoder", segments: [".qoder", "skills"], access: "link" },
+  // agy 1.2.7 reads workspace `<root>/.agents/skills` and global
+  // `~/.gemini/config/skills`. That workspace walk does not include the shared
+  // user directory, so a link is required.
+  { harnessId: "antigravity", segments: [".gemini", "config", "skills"], access: "link" },
 ]);
 
 const SKILL_MANIFEST = "SKILL.md";

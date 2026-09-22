@@ -80,7 +80,12 @@ import {
   writeNewThreadAgentPreference,
   writeNewThreadExternalConfigurationPreference,
 } from "./renderer-new-thread-preference.js";
-import { installRendererSidebarAgentIcons } from "./renderer-sidebar-agent-icons.js";
+import {
+  draftIdFromSidebarRowElement,
+  installRendererSidebarAgentIcons,
+  SIDEBAR_THREAD_ID_ATTRIBUTE,
+  SIDEBAR_THREAD_ROW_SELECTOR,
+} from "./renderer-sidebar-agent-icons.js";
 import {
   rendererHarnessCommandExecutesDirectly,
   routeRendererHarnessCommandSelection,
@@ -642,10 +647,52 @@ export function applyComposerModelWrite(
   return write();
 }
 
-function mutationMayChangeComposerTarget(mutation: MutationRecord): boolean {
-  const target =
-    mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
-  return !target || editorForElement(target) === null;
+function isElementNode(node: Node | EventTarget | null): node is Element {
+  return (
+    typeof node === "object" &&
+    node !== null &&
+    "closest" in node &&
+    typeof (node as Element).closest === "function"
+  );
+}
+
+function mutationElement(node: Node | null): Element | null {
+  if (isElementNode(node)) return node;
+  const parent = node && "parentElement" in node ? node.parentElement : null;
+  return isElementNode(parent) ? parent : null;
+}
+
+function elementTouchesComposer(node: Node): boolean {
+  if (!isElementNode(node)) return false;
+  if (node.closest(CODEX_COMPOSER_SELECTOR)) return true;
+  return (
+    node.matches(CODEX_COMPOSER_SELECTOR) ||
+    node.matches(EDITOR_SELECTOR) ||
+    Boolean(node.querySelector?.(CODEX_COMPOSER_SELECTOR)) ||
+    Boolean(node.querySelector?.(EDITOR_SELECTOR))
+  );
+}
+
+function mutationTouchesComposer(mutation: MutationRecord): boolean {
+  if (elementTouchesComposer(mutation.target)) return true;
+  if (mutation.type !== "childList") return false;
+  return [...mutation.addedNodes, ...mutation.removedNodes].some(elementTouchesComposer);
+}
+
+export function mutationMayChangeComposerTarget(mutation: MutationRecord): boolean {
+  if (mutation.type === "characterData") return false;
+  const target = mutationElement(mutation.target);
+  if (!target) return false;
+  const sidebarRow = target.closest(SIDEBAR_THREAD_ROW_SELECTOR);
+  if (isElementNode(sidebarRow) && typeof sidebarRow.getAttribute === "function") {
+    return (
+      mutation.type === "attributes" &&
+      mutation.attributeName === SIDEBAR_THREAD_ID_ATTRIBUTE &&
+      draftIdFromSidebarRowElement(sidebarRow) === null
+    );
+  }
+  if (editorForElement(target)) return false;
+  return mutationTouchesComposer(mutation);
 }
 
 function catalogWithConfigurationState(
@@ -2616,7 +2663,7 @@ export function installRendererBindingProbe(
       applyDraftAgentCarrier(composer, state.agent);
     }
     renderMounted(mounted);
-    sidebarAgentIcons.refresh();
+    sidebarAgentIcons.scan();
     if (threadIdFromComposerModelTarget(modelTarget) && !inherited) {
       void loadThreadOwnership(mounted);
     } else if (
@@ -2850,7 +2897,11 @@ export function installRendererBindingProbe(
 
   const mutationObserver = new MutationObserver((mutations) => {
     transferReplacedComposers(mutations);
-    scheduleScan(mutations.some(mutationMayChangeComposerTarget));
+    const refreshTargets = mutations.some(mutationMayChangeComposerTarget);
+    if (!refreshTargets && pendingReplacements.size === 0 && !mutations.some(mutationTouchesComposer)) {
+      return;
+    }
+    scheduleScan(refreshTargets);
   });
   const onHostRouteChange = (): void => {
     const hostId = activeModelHostId();
@@ -2901,8 +2952,12 @@ export function installRendererBindingProbe(
   };
   mutationObserver.observe(document.documentElement, {
     attributes: true,
-    attributeFilter: ["hidden", "aria-hidden", "data-codex-composer-root"],
-    characterData: true,
+    attributeFilter: [
+      "hidden",
+      "aria-hidden",
+      "data-codex-composer-root",
+      SIDEBAR_THREAD_ID_ATTRIBUTE,
+    ],
     childList: true,
     subtree: true,
   });

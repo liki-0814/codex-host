@@ -11,6 +11,8 @@ const SETTINGS_APPLICATION_HEADER_SELECTOR = 'header[data-pip-obstacle="app-shel
 const SETTINGS_HEADER_SLOT_SELECTOR = ':scope > [data-test-id="header-shell-slot"]';
 const SETTINGS_HEADER_NATIVE_ACTION_GROUP_SELECTOR =
   ':scope > [data-app-shell-header-obstacle="true"]';
+/** Codex's own settings navigation. Present only while that surface is open. */
+const NATIVE_SETTINGS_PANEL_SELECTOR = "[data-settings-panel-slug]";
 
 export interface RendererSettingsTriggerControl {
   root: HTMLElement;
@@ -113,6 +115,21 @@ export function inspectRendererSettingsContract(
     visibleHeaderCount: visibleHeaders.length,
     insertionPointCount,
   };
+}
+
+function nativeSettingsVisible(ownerDocument: Document): boolean {
+  return ownerDocument.querySelector(NATIVE_SETTINGS_PANEL_SELECTOR) !== null;
+}
+
+export function mutationTouchesNativeSettings(mutation: MutationRecord): boolean {
+  if (mutation.type !== "childList") return false;
+  return [...mutation.addedNodes, ...mutation.removedNodes].some((node) => {
+    if (!(node instanceof Element)) return false;
+    return (
+      node.matches(NATIVE_SETTINGS_PANEL_SELECTOR) ||
+      node.querySelector(NATIVE_SETTINGS_PANEL_SELECTOR) !== null
+    );
+  });
 }
 
 function findNativeHeaderActionGroup(header: HTMLElement): HTMLElement | null {
@@ -292,6 +309,12 @@ export function installRendererSettingsHeaderTrigger(options: {
 
   const refresh = (): boolean => {
     if (disposed) return false;
+    // Codex settings reuses the window titlebar. The trigger lands on the
+    // traffic lights there, and that surface already has its own navigation.
+    if (nativeSettingsVisible(ownerDocument)) {
+      trigger?.root.remove();
+      return false;
+    }
     const insertionPoint = findRendererSettingsHeaderInsertionPoint(ownerDocument);
     if (!insertionPoint) {
       trigger?.root.remove();
@@ -320,6 +343,16 @@ export function installRendererSettingsHeaderTrigger(options: {
   };
 
   refresh();
+  const settingsObserver =
+    typeof MutationObserver === "function"
+      ? new MutationObserver((mutations) => {
+          if (mutations.some(mutationTouchesNativeSettings)) refresh();
+        })
+      : null;
+  const settingsRoot = ownerDocument.body ?? ownerDocument.documentElement;
+  if (settingsObserver && settingsRoot) {
+    settingsObserver.observe(settingsRoot, { childList: true, subtree: true });
+  }
   return {
     get root() {
       return trigger?.root ?? null;
@@ -332,6 +365,7 @@ export function installRendererSettingsHeaderTrigger(options: {
     dispose() {
       if (disposed) return;
       disposed = true;
+      settingsObserver?.disconnect();
       trigger?.dispose();
       trigger = null;
     },

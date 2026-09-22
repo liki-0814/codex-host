@@ -162,6 +162,28 @@ describe("Renderer sidebar Agent ownership", () => {
       },
     } as HTMLElement;
     expect(draftIdFromSidebarRowElement(row)).toBe("client-new-thread:opaque");
+    expect(threadIdFromSidebarRowElement(row)).toBeNull();
+    const promoted = {
+      getAttribute(attribute: string) {
+        return attributes[attribute as keyof typeof attributes] ?? null;
+      },
+    } as HTMLElement;
+    Object.defineProperty(promoted, "__reactFiber$test", {
+      value: {
+        memoizedProps: {
+          conversationId: "1493b3ef-22c4-4341-9fc3-d3bee6d8dc43",
+          dataAttributes: attributes,
+        },
+        return: {
+          memoizedProps: {
+            conversationId: "client-new-thread:opaque",
+            dataAttributes: attributes,
+          },
+          return: null,
+        },
+      },
+    });
+    expect(threadIdFromSidebarRowElement(promoted)).toBe("1493b3ef-22c4-4341-9fc3-d3bee6d8dc43");
     expect(threadIdFromSidebarRowElement(fiberRow(["thread-1", "thread-1"]))).toBe("thread-1");
     expect(
       threadIdFromSidebarRowElement(fiberRow(["thread-1"], { matchingAttributes: false })),
@@ -205,6 +227,32 @@ describe("Renderer sidebar Agent ownership", () => {
 
     expect(row.agent).toBe("pi");
     expect(client.listThreadOwnership).not.toHaveBeenCalled();
+    control.dispose();
+  });
+
+  it("rescans draft rows without clearing cached ownership", async () => {
+    const draft = new FakeRow(null, "client-new-thread:opaque");
+    const owned = new FakeRow("pi-thread");
+    const dom = new FakeDom([draft, owned]);
+    const client = clientWith(async ({ threadIds }) => ({
+      threads: threadIds.map((threadId) => ({
+        threadId,
+        owner: "external" as const,
+        harnessId: PI_HARNESS_ID,
+      })),
+    }));
+    const control = installRendererSidebarAgentIcons({
+      getClient: () => client,
+      getLocalAgent: ({ draftId }) => (draftId === "client-new-thread:opaque" ? "pi" : null),
+      dom,
+    });
+
+    await settle();
+    expect(client.listThreadOwnership).toHaveBeenCalledTimes(1);
+    control.scan();
+    await settle();
+    expect(client.listThreadOwnership).toHaveBeenCalledTimes(1);
+    expect(owned.agent).toBe("pi");
     control.dispose();
   });
 

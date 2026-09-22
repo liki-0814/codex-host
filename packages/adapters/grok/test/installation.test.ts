@@ -27,4 +27,29 @@ describe("Grok native updates", () => {
     run.mockResolvedValueOnce(JSON.stringify({ ...state, error: "offline" }));
     await expect(installation("check")).rejects.toThrow("failed");
   });
+
+  it("allows the npm postinstall that replaces the versioned binary", async () => {
+    const run = vi.mocked(runInstallationCommand);
+    run.mockClear();
+    const before = {
+      currentVersion: "1.0.34",
+      latestVersion: "1.0.40",
+      updateAvailable: true,
+      installer: "npm",
+      error: null,
+    };
+    run
+      .mockResolvedValueOnce(JSON.stringify(before))
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce(
+        JSON.stringify({ ...before, currentVersion: "1.0.40", updateAvailable: false }),
+      );
+    const installation = createGrokInstallation({ npm_config_allow_scripts: "other" });
+    await expect(installation("update")).resolves.toMatchObject({ currentVersion: "1.0.40" });
+    expect(run.mock.calls[1]?.[1]).toEqual(["update", "--force-reinstall"]);
+    expect(run.mock.calls[1]?.[2]).toMatchObject({
+      npm_config_allow_scripts: "other,@xai-official/grok",
+    });
+    expect(run.mock.calls[1]?.[3]).toBe(300_000);
+  });
 });

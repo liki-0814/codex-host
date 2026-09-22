@@ -904,9 +904,7 @@ export function modelSelectionForAgent(
   return transportModelId ? { model: transportModelId, reasoningEffort } : officialSelection;
 }
 
-export function installCurrentRendererAdapter(
-  selectionForThread?: (hostId: string, threadId: string) => LockedComposerSelection | null,
-): {
+export function installCurrentRendererAdapter(): {
   status: RendererAdapterStatus;
   modelControl: RendererModelClient | null;
   applyAgent(

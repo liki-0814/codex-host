@@ -456,7 +456,7 @@ not Host plugin updates, and existing sessions are not restarted.
 Older plugins and brokered connections without this optional capability report it
 as unavailable. No local update is substituted for a remote installation.
 
-## New delegated Threads in manual project order
+## Newly delegated threads join the current project
 
 After a delegation is persisted, Host emits `codexhost/delegation/created` with
 its Thread ID and cwd. Renderer uses Desktop's existing project-order registration

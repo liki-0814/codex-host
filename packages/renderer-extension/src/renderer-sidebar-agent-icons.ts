@@ -28,7 +28,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function sidebarThreadAttributes(element: HTMLElement): {
+function sidebarThreadAttributes(element: Element): {
   taskKey: string;
   hostId: string;
   rowMarker: string;
@@ -40,7 +40,7 @@ function sidebarThreadAttributes(element: HTMLElement): {
   return { taskKey, hostId, rowMarker };
 }
 
-export function draftIdFromSidebarRowElement(element: HTMLElement): string | null {
+export function draftIdFromSidebarRowElement(element: Element): string | null {
   const attributes = sidebarThreadAttributes(element);
   if (!attributes) return null;
   const hostPrefix = `${attributes.hostId}:`;
@@ -55,6 +55,8 @@ export function threadIdFromSidebarRowElement(element: HTMLElement): string | nu
   if (!attributes) return null;
   const { taskKey, hostId, rowMarker } = attributes;
 
+  // Codex can keep the sidebar key on `client-new-thread:` after the draft
+  // becomes a conversation. The Fiber `conversationId` is the real Thread.
   const fiberNames = Object.getOwnPropertyNames(element).filter((name) =>
     name.startsWith("__reactFiber$"),
   );
@@ -72,6 +74,7 @@ export function threadIdFromSidebarRowElement(element: HTMLElement): string | nu
       const threadId = hostThreadIdSchema.safeParse(props.conversationId);
       if (
         threadId.success &&
+        !threadId.data.startsWith("client-new-thread:") &&
         dataAttributes[SIDEBAR_THREAD_ROW_ATTRIBUTE] === rowMarker &&
         dataAttributes[SIDEBAR_THREAD_ID_ATTRIBUTE] === taskKey &&
         dataAttributes[SIDEBAR_THREAD_HOST_ID_ATTRIBUTE] === hostId
@@ -124,6 +127,7 @@ export interface SidebarAgentIconDom {
 }
 
 export interface RendererSidebarAgentIcons {
+  scan(): void;
   refresh(): void;
   dispose(): void;
 }
@@ -428,6 +432,9 @@ export function installRendererSidebarAgentIcons(options: {
   scan();
 
   return {
+    scan() {
+      scheduleScan();
+    },
     refresh() {
       failed.clear();
       for (const timer of ownershipRetryTimers.values()) clearTimeout(timer);

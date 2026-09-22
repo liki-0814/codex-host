@@ -147,12 +147,18 @@ function createFakeHeader(options: { nativeActions: boolean }): FakeHeader {
   return { header, startSlot, surface, pageHeader, actionGroup, endSlot };
 }
 
-function stubHeaderDocument(current: () => FakeHeaderElement): Document {
+function stubHeaderDocument(
+  current: () => FakeHeaderElement,
+  nativeSettings: () => boolean = () => false,
+): Document {
   const document = {
     createElement: () => new FakeHeaderElement(),
     createElementNS: () => new FakeHeaderElement(),
-    querySelector: (selector: string) =>
-      selector === 'header[data-pip-obstacle="app-shell-header"]' ? current() : null,
+    querySelector: (selector: string) => {
+      if (selector === 'header[data-pip-obstacle="app-shell-header"]') return current();
+      if (selector === "[data-settings-panel-slug]") return nativeSettings() ? current() : null;
+      return null;
+    },
     querySelectorAll: () => [],
   } as unknown as Document;
   vi.stubGlobal("document", document);
@@ -358,6 +364,36 @@ describe("Renderer settings header trigger", () => {
         control.root,
         shell.actionGroup,
       ]);
+      control.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("removes the header trigger while native Codex settings is open", () => {
+    const shell = createFakeHeader({ nativeActions: true });
+    let nativeSettings = false;
+    const document = stubHeaderDocument(
+      () => shell.header,
+      () => nativeSettings,
+    );
+
+    try {
+      const control = installRendererSettingsHeaderTrigger({
+        available: true,
+        onOpen: vi.fn(),
+        ownerDocument: document,
+      });
+      expect(shell.surface.children).toEqual([shell.pageHeader, control.root, shell.actionGroup]);
+
+      nativeSettings = true;
+      expect(control.refresh()).toBe(false);
+      expect(control.root?.isConnected).toBe(false);
+      expect(shell.surface.children).toEqual([shell.pageHeader, shell.actionGroup]);
+
+      nativeSettings = false;
+      expect(control.refresh()).toBe(true);
+      expect(shell.surface.children).toEqual([shell.pageHeader, control.root, shell.actionGroup]);
       control.dispose();
     } finally {
       vi.unstubAllGlobals();

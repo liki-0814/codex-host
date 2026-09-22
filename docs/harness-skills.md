@@ -11,10 +11,11 @@ Agent Skill 是一个包含 `SKILL.md` 的目录。codexhost 不新增一套自�
 | Codex | `~/.codex/skills` | 否 | 二进制中仅 `.codex/skills` 为加载路径，`.agents/skills` 出现在外部 Agent 导入上下文 |
 | Pi | `~/.pi/agent/skills` | 否 | `skills.js` 的用户级路径是 `getAgentDir()/skills`；它扫描的 `.agents/skills` 是从工作目录向上走到仓库根的项目级路径 |
 | Claude Code | `~/.claude/skills` | 否 | 只读取自身目录 |
-| Grok | `~/.grok/skills` | 是 | 内嵌文档：「Grok also scans `.agents/skills/` at each tier」 |
-| Kimi Code | `~/.kimi-code/skills` | 是 | `USER_GENERIC_DIRS = [".agents/skills"]` |
-| Cursor | `~/.cursor/skills` | 是 | 加载表包含 `.cursor/skills`、`.claude/skills`、`.codex/skills`、`.grok/skills`、`.agents/skills` |
-| Qoder | `~/.qoder/skills` | 是 | 设置项 `loadFromAgentsDirectory` 默认开启，加载 `<home>/.agents/skills` |
+| Grok | `~/.grok/skills` | 是 | grok 1.0.34 内嵌文档：每个层级都扫描 `.agents/skills/`，与 `.grok/` 并列，包含用户级 `~/.agents/skills` |
+| Kimi Code | `~/.kimi-code/skills` | 是 | `userRoots` 把 `os.homedir()` 拼到 `USER_GENERIC_DIRS = [".agents/skills"]` |
+| Cursor | `~/.cursor/skills` | 是 | cursor-agent 用 `userHomeDirectory` 拼接 `{configDir:".agents", subdir:"skills"}`，作用域是 user |
+| Qoder | `~/.qoder/skills` | 否 | qodercli 1.1.59 始终加载 `~/.qoder/skills`。`~/.agents/skills` 由 `loadFromAgentsDirectory` 控制：交互式 CLI 默认开启，SDK 模式（codexhost 的启动方式）未显式设置时关闭 |
+| Antigravity | `~/.gemini/config/skills` | 否 | agy 1.2.7 只读工作区 `<root>/.agents/skills` 和全局 `~/.gemini/config/skills`，不读用户级 `~/.agents/skills` |
 
 声明表在 `packages/host-runtime/src/harness-skills.ts` 的 `SKILL_DIRECTORIES`，补充一个来源就是加一行；没有依据的 Harness 不会凭猜测列入。
 

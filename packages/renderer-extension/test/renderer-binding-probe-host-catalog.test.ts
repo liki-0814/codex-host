@@ -94,14 +94,18 @@ vi.mock("../src/versioned-renderer-adapter.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../src/renderer-sidebar-agent-icons.js", () => ({
-  installRendererSidebarAgentIcons: (
-    options: Parameters<typeof installRendererSidebarAgentIcons>[0],
-  ) => {
-    testState.sidebarOptions = options;
-    return { refresh: vi.fn(), dispose: vi.fn() };
-  },
-}));
+vi.mock("../src/renderer-sidebar-agent-icons.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/renderer-sidebar-agent-icons.js")>();
+  return {
+    ...actual,
+    installRendererSidebarAgentIcons: (
+      options: Parameters<typeof installRendererSidebarAgentIcons>[0],
+    ) => {
+      testState.sidebarOptions = options;
+      return { scan: vi.fn(), refresh: vi.fn(), dispose: vi.fn() };
+    },
+  };
+});
 
 vi.mock("../src/renderer-settings-lifecycle.js", () => ({
   installRendererSettingsLifecycle: (

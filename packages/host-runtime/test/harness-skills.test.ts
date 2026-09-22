@@ -73,8 +73,8 @@ describe("Skill catalog", () => {
     expect(target(catalog, "grok").access).toBe("native");
     expect(target(catalog, "kimi-code").access).toBe("native");
     expect(target(catalog, "cursor-cli").access).toBe("native");
-    expect(target(catalog, "qoder").access).toBe("native");
-    expect(target(catalog, "antigravity").access).toBe("native");
+    expect(target(catalog, "qoder").access).toBe("link");
+    expect(target(catalog, "antigravity").access).toBe("link");
   });
 
   it("reports whether each Harness directory exists locally", async () => {

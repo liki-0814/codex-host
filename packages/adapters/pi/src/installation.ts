@@ -1,35 +1,40 @@
 import {
   createInstallationManager,
+  fetchInstallationText,
+  installationVersion,
   newerInstallationVersion,
-  npmInstallation,
+  runInstallationCommand,
+  versionFromOutput,
 } from "@codexhost/harness-discovery";
 import { resolvePiExecutable } from "./command.js";
 
+/** The endpoint `pi update` uses. Not the npm registry. */
+const PI_LATEST_VERSION_URL = "https://pi.dev/api/latest-version";
+
 export function createPiInstallation(environment: NodeJS.ProcessEnv, command?: string) {
-  const resolve = () => resolvePiExecutable({ environment, ...(command ? { command } : {}) });
-  const installation = async () => {
-    const result = await npmInstallation(
-      resolve(),
-      ["@earendil-works/pi-coding-agent", "@mariozechner/pi-coding-agent"],
+  const run = (args: string[], timeout?: number) =>
+    runInstallationCommand(
+      resolvePiExecutable({ environment, ...(command ? { command } : {}) }),
+      args,
       environment,
+      timeout,
     );
-    if (!result) throw new Error("Pi is not an npm installation; use its original installer");
-    return result;
-  };
   return createInstallationManager({
     async check() {
-      const local = await installation();
-      const latestVersion = await local.latest();
+      const currentVersion = versionFromOutput(await run(["--version"]));
+      const payload = JSON.parse(await fetchInstallationText(PI_LATEST_VERSION_URL)) as {
+        version?: unknown;
+      };
+      const latestVersion = installationVersion(payload.version);
       return {
-        currentVersion: local.currentVersion,
+        currentVersion,
         latestVersion,
-        canUpdate: local.canUpdate,
-        updateAvailable: newerInstallationVersion(local.currentVersion, latestVersion),
-        ...(!local.canUpdate ? { message: "Use the original package manager to update Pi" } : {}),
+        updateAvailable: newerInstallationVersion(currentVersion, latestVersion),
+        canUpdate: true,
       };
     },
-    async update(state) {
-      await (await installation()).update(state.latestVersion);
+    async update() {
+      await run(["update"], 300_000);
     },
   });
 }
