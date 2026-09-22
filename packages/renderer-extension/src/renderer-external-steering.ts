@@ -134,11 +134,7 @@ async function preserveQueuedFollowUps(
  * Only this operation's outgoing start RPC becomes steer; Host owns stop/wait/start.
  * Official Threads retain the original steer implementation and response semantics.
  */
-export function installRendererExternalSteering(
-  target: unknown,
-  refreshRequestBridge?: () => boolean,
-  modelForThread?: (threadId: string) => string | null,
-): (() => void) | null {
+export function installRendererExternalSteering(target: unknown): (() => void) | null {
   if (!isManager(target)) return null;
   const manager = target;
   const originalSteer = manager.steerTurn;
@@ -151,13 +147,6 @@ export function installRendererExternalSteering(
   let disposed = false;
 
   const send: RendererMethod = function (method, params, options) {
-    refreshRequestBridge?.();
-    // Existing Threads keep their native Renderer state. Carry the current external
-    // selection only when sending, without a configuration RPC on every click.
-    if (method === "turn/start" && isRecord(params) && typeof params.threadId === "string") {
-      const model = modelForThread?.(params.threadId);
-      if (model) params = { ...params, model };
-    }
     const messageId = isRecord(params) ? params.clientUserMessageId : null;
     const route =
       typeof messageId === "string" && isRecord(params)

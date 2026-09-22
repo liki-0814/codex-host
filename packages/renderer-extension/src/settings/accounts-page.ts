@@ -172,7 +172,9 @@ export function createAccountsSettingsPage(
           );
         }
         for (const account of visibleHarnessAccounts) {
-          body.append(...renderHarnessAccountRows(document, account, messages, usageDisplay));
+          body.append(
+            ...renderHarnessAccountRows(document, account, messages, usageDisplay),
+          );
         }
         restoreFocus();
       };

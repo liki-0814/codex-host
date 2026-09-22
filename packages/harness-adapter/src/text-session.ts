@@ -22,6 +22,7 @@ import type {
 } from "@codexhost/shared-contracts";
 
 import type { HostUsage } from "./usage.js";
+import type { HarnessCredentialExport, HarnessCredentialImports } from "./credential-imports.js";
 
 export type {
   HarnessInspection,
@@ -570,6 +571,8 @@ export interface HarnessAdapter {
     id: string,
     action: "inspect" | "install",
   ): Promise<{ installed: boolean; available?: boolean; updateAvailable?: boolean }>;
+  readonly credentialExport?: HarnessCredentialExport;
+  readonly credentialImports?: HarnessCredentialImports;
   readonly harnessId: HarnessId;
   /** Static command metadata. Reading it must not inspect, connect to, or open a Native Session. */
   readonly commandCatalog?: HarnessCommandCatalog;

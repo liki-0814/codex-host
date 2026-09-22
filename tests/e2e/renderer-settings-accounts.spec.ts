@@ -34,8 +34,19 @@ const { outputFiles } = await build({
           {harnessId:"claude-code",harnessName:"Claude Code",email:"claude@example.com",plan:"max",credits:{usedPercent:0,periodType:"five_hour",productUsage:[{product:"7-day window",usagePercent:50}]}},
         ];
         let failUsage = scenario === "error";
-        const calls = { inspect:[] };
+        const calls = { inspect:[], imports:[] };
+        const sources = [
+          {id:"codex:fixture",harnessId:"codex",provider:"openai-codex",label:"zhaobin_jiang@163.com"},
+          {id:"grok:fixture",harnessId:"grok",provider:"xai",label:"grok@example.com"},
+        ];
+        let imported = [];
         const client = {
+          credentialImports: async (request) => {
+            calls.imports.push(request);
+            if (request.action === "import") imported.push({name:request.name,source:sources.find(s=>s.id===request.sourceId),importedAt:"2026-09-10T08:20:00Z"});
+            if (request.action === "remove") imported = imported.filter(r=>r.name!==request.name);
+            return {sources,targets:[{harnessId:"pi",providers:["openai-codex","xai"],imports:imported,others:[{provider:"anthropic",type:"oauth"},{provider:"codex1",type:"oauth",label:"same@example.com",vendor:"openai-codex"},{provider:"openai-codex",type:"api_key"}]}]};
+          },
           ...(scenario === "external" ? {listHarnessAccounts: async () => ({accounts:harnessAccounts})} : {}),
           listCodexAccounts: async () => accountSnapshot(),
           refreshCodexAccounts: async () => accountSnapshot(),
@@ -100,11 +111,8 @@ test("shows detected Harness quota read-only and removes rows when authenticatio
   await expect(
     nativeAccounts.getByRole("button", { name: /切换|删除|使用重置|登录$/ }),
   ).toHaveCount(0);
-  const info = section.getByRole("button", { name: "Grok Build · 原生管理", exact: true });
-  await info.click();
-  const nativeInfo = section.locator('[data-harness-id="grok"] dialog[open]');
-  await expect(nativeInfo).toContainText("登录、退出和切换请在其原生客户端中完成");
-  await page.keyboard.press("Escape");
+  await expect(section.locator('[data-harness-id="grok"]')).toContainText("原生管理");
+  await expect(section.locator(".settings-account-harness-target")).toHaveCount(0);
   await page.evaluate(() => Reflect.get(globalThis, "accountsFixture").clearHarnessAccounts());
   await page.locator(".settings-account-toolbar").getByRole("button", { name: "刷新额度" }).click();
   await expect(nativeAccounts).toHaveCount(0);
@@ -115,12 +123,7 @@ test("shows current Codex quota, reset-credit count, and no Host consume or logi
   page,
 }) => {
   await setup(page);
-  await expect(page.locator(".settings-account-table th")).toHaveText([
-    "账号",
-    "5 小时剩余",
-    "7 天剩余",
-    "管理",
-  ]);
+  await expect(page.locator(".settings-account-table th")).toHaveText(["账号", "剩余", "管理"]);
   await expect(page.locator(`${nativeRow} .settings-account-active`)).toHaveText("当前");
   await expect(page.locator(`${nativeRow} .settings-account-plan`)).toHaveText("Pro 20x");
   await expect(page.locator(`${nativeRow} .settings-account-reset-summary`)).toContainText("2 张");
