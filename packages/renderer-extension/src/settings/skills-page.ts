@@ -149,14 +149,11 @@ export function createSkillsSettingsPage(
         const button = document.createElement("button");
         button.type = "button";
         button.className = linked ? "settings-skill-toggle is-linked" : "settings-skill-toggle";
-        button.disabled = busy || !target.present;
+        button.disabled = busy;
         button.setAttribute("aria-pressed", linked ? "true" : "false");
         const label = harnessLabel(target.harnessId);
         const agent = rendererAgent(target.harnessId);
-        button.setAttribute(
-          "aria-label",
-          `${label} · ${target.present ? target.directory : messages.skillsDirectoryMissing}`,
-        );
+        button.setAttribute("aria-label", `${label} · ${target.directory}`);
         button.title = button.getAttribute("aria-label") ?? label;
         button.append(
           agent

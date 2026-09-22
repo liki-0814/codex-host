@@ -1,4 +1,4 @@
-import { lstat, readdir, readFile, readlink, rm, symlink } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, readlink, rm, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -204,10 +204,16 @@ export async function applySkillLink(
   const definition = SKILL_DIRECTORIES.find(({ harnessId }) => harnessId === params.harnessId);
   if (!definition) throw new Error(`No known Skill directory for ${params.harnessId}`);
   const directory = path.join(home, ...definition.segments);
-  if ((await readDirectoryEntries(directory)) === null) {
-    throw new Error(`${params.harnessId} has no local Skill directory`);
-  }
   const linkPath = path.join(directory, params.skill);
+  if (params.action === "link" && definition.access === "native") {
+    throw new Error(`${params.harnessId} already reads the shared Skill directory`);
+  }
+  // The skills folder is created on the first real skill, not when the Harness
+  // itself is installed. An explicit link is what creates that declared directory.
+  if ((await readDirectoryEntries(directory)) === null) {
+    if (params.action === "unlink") return readSkillCatalog(input);
+    await mkdir(directory, { recursive: true });
+  }
 
   if (params.action === "unlink") {
     // Only ever remove a link the Host could have created. A real directory in
@@ -220,9 +226,6 @@ export async function applySkillLink(
     return readSkillCatalog(input);
   }
 
-  if (definition.access === "native") {
-    throw new Error(`${params.harnessId} already reads the shared Skill directory`);
-  }
   const source = path.join(home, ...SHARED_SEGMENTS, params.skill);
   if ((await readManifest(source)) === null) {
     throw new Error(`${params.skill} is not a Skill in the shared directory`);

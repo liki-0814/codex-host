@@ -27,7 +27,7 @@ Agent Skill 是一个包含 `SKILL.md` 的目录。codexhost 不新增一套自�
 
 - 在声明表中且 `access` 为 `link`；
 - 在连接页显示为已连接。**不能用目录是否存在来判断**：`delegation-skill.ts` 会把委派技能写进 `~/.claude/skills`，因此即便没有安装 Claude Code，这个目录也存在；
-- 目录已存在才允许写入。目录不存在说明该 Harness 从未在本机运行过，此时不替它创建目录。
+- 技能目录可以尚不存在。Antigravity 这类 Harness 要到第一次有全局技能时才创建它。用户明确接入时才创建声明表中的那一层目录，打开页面不会创建。
 
 Codex 始终视为存在，不需要连接判断。
 

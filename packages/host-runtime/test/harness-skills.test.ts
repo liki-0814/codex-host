@@ -201,16 +201,21 @@ describe("Skill linking", () => {
     ).rejects.toThrow(/already reads the shared/u);
   });
 
-  it("refuses a Harness with no local directory", async () => {
+  it("creates the declared Skill directory when the Harness has not created it yet", async () => {
     const root = await home();
     await writeSkill(path.join(root, ".agents", "skills"), "shared-one");
 
-    await expect(
-      applySkillLink(
-        { skill: "shared-one", harnessId: harnessIdSchema.parse("codex"), action: "link" },
-        { homeDirectory: root },
-      ),
-    ).rejects.toThrow(/no local Skill directory/u);
+    const catalog = await applySkillLink(
+      { skill: "shared-one", harnessId: harnessIdSchema.parse("antigravity"), action: "link" },
+      { homeDirectory: root },
+    );
+
+    const link = path.join(root, ".gemini", "config", "skills", "shared-one");
+    expect(catalog.skills[0]?.linkedHarnessIds).toEqual(["antigravity"]);
+    expect(catalog.targets.find((target) => target.harnessId === "antigravity")?.present).toBe(
+      true,
+    );
+    expect((await lstat(link)).isSymbolicLink()).toBe(true);
   });
 
   it("rejects a Skill name that escapes the shared directory", async () => {

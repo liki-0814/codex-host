@@ -244,7 +244,6 @@ export interface RendererSettingsMessages {
   readonly skillsSearchPlaceholder: string;
   readonly skillsEmpty: string;
   readonly skillsNoMatches: string;
-  readonly skillsDirectoryMissing: string;
   readonly skillsNativeAccess: string;
   readonly accountBalanceRemaining: string;
   readonly skillsBrokenLink: string;
@@ -508,7 +507,6 @@ const ENGLISH_MESSAGES: RendererSettingsMessages = Object.freeze({
   skillsSearchPlaceholder: "Search Skills by name or description...",
   skillsEmpty: "No Skills found",
   skillsNoMatches: "No Skills match this search",
-  skillsDirectoryMissing: "Directory not present on this machine",
   skillsNativeAccess: "read this directory natively, so no link is needed.",
   accountBalanceRemaining: "remaining balance",
   skillsBrokenLink: "Link target is missing",
@@ -771,7 +769,6 @@ const CHINESE_MESSAGES: RendererSettingsMessages = Object.freeze({
   skillsSearchPlaceholder: "搜索技能的名称或描述...",
   skillsEmpty: "没有找到技能",
   skillsNoMatches: "没有匹配的技能",
-  skillsDirectoryMissing: "本机不存在该目录",
   skillsNativeAccess: "原生读取该目录，无需接入。",
   accountBalanceRemaining: "剩余余额",
   skillsBrokenLink: "链接指向的技能已不存在",
