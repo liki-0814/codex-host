@@ -15,6 +15,7 @@ import {
   renderRendererAgentPicker,
   type RendererAgentPickerControl,
 } from "./renderer-agent-picker.js";
+import { catalogModelForSelection } from "./renderer-model-configuration.js";
 import {
   mountRendererModelPicker,
   renderRendererModelPicker,
@@ -755,9 +756,7 @@ export function renderComposerAgentControl(
   }
 
   const selectedModel = modelView.selected;
-  const selectedCatalogModel = modelView.catalog?.models.find(
-    (model) => model.ref.id === selectedModel?.id,
-  );
+  const selectedCatalogModel = catalogModelForSelection(modelView.catalog, selectedModel);
   const availableThinkingOptions =
     modelView.thinkingSelectionSupported === false
       ? []

@@ -27,8 +27,24 @@ pub(crate) fn is_desktop_helper(_stock_codex_path: &std::path::Path) -> bool {
 }
 
 #[cfg(target_os = "macos")]
+fn enclosing_official_installation(
+    stock_codex_path: &std::path::Path,
+) -> Option<codexhost_platform::DesktopInstallation> {
+    use codexhost_platform::discover_codex_desktop_from_root;
+
+    let mut cursor = stock_codex_path.parent()?;
+    for _ in 0..8 {
+        if let Ok(installation) = discover_codex_desktop_from_root(cursor) {
+            return Some(installation);
+        }
+        cursor = cursor.parent()?;
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
 fn is_macos_desktop_helper(stock_codex_path: &std::path::Path) -> Option<bool> {
-    use codexhost_platform::{discover_codex_desktop_from_root, process_snapshot};
+    use codexhost_platform::process_snapshot;
     use std::path::PathBuf;
 
     let launcher_id = std::env::var(super::LAUNCHER_PID_ENV).ok()?.parse().ok()?;
@@ -42,8 +58,8 @@ fn is_macos_desktop_helper(stock_codex_path: &std::path::Path) -> Option<bool> {
     // LaunchServices reparents Desktop to launchd, so the launcher cannot be an
     // ancestor. Match the exact Desktop in the already-resolved official CLI's
     // validated bundle instead; direct Desktop -> shim must still start Host.
-    let bundle = stock_codex_path.parent()?.parent()?.parent()?;
-    let installation = discover_codex_desktop_from_root(bundle).ok()?;
+    // Current CLIs live several levels below the app bundle, inside CodexCLI.app.
+    let installation = enclosing_official_installation(stock_codex_path)?;
     if installation.executable_codex_cli != stock_codex_path {
         return None;
     }

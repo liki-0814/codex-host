@@ -26,6 +26,7 @@ export {
   harnessAccountListResultSchema,
 } from "./harness-accounts.js";
 export type {
+  AccountBalanceSnapshot,
   HarnessAccountSnapshot,
   HarnessAccountSource,
   HarnessAccountSourceListResult,
@@ -34,6 +35,46 @@ export type {
   HarnessAccountListParams,
   HarnessAccountListResult,
 } from "./harness-accounts.js";
+export { accountBalanceSnapshotSchema } from "./harness-accounts.js";
+export {
+  HARNESS_INSTALLATION_METHOD,
+  harnessInstallationParamsSchema,
+  harnessInstallationStateSchema,
+} from "./harness-installation.js";
+export type {
+  HarnessInstallationParams,
+  HarnessInstallationState,
+} from "./harness-installation.js";
+export {
+  HARNESS_EXTENSION_METHOD,
+  harnessExtensionParamsSchema,
+  harnessExtensionStateSchema,
+} from "./harness-extension.js";
+export type { HarnessExtensionParams, HarnessExtensionState } from "./harness-extension.js";
+export {
+  configuredModelRef,
+  modelConfigurationBase,
+  readConfiguredModelRef,
+  selectModelConfiguration,
+} from "./model-configuration.js";
+export {
+  HARNESS_SKILLS_INSPECT_METHOD,
+  HARNESS_SKILLS_LINK_METHOD,
+  harnessSkillAccessSchema,
+  harnessSkillBrokenLinkSchema,
+  harnessSkillCatalogSchema,
+  harnessSkillLinkParamsSchema,
+  harnessSkillSchema,
+  harnessSkillTargetSchema,
+} from "./harness-skills.js";
+export type {
+  HarnessSkill,
+  HarnessSkillAccess,
+  HarnessSkillBrokenLink,
+  HarnessSkillCatalog,
+  HarnessSkillLinkParams,
+  HarnessSkillTarget,
+} from "./harness-skills.js";
 
 export {
   HARNESS_PLUGIN_ROUTE_PREFIX,
@@ -157,6 +198,7 @@ export {
   harnessInspectParamsSchema,
   harnessInspectionSchema,
   harnessModelCatalogSchema,
+  harnessModelConfigurationOptionSchema,
   harnessModelRefIdSchema,
   harnessModelRefSchema,
   harnessModelSchema,
@@ -184,6 +226,7 @@ export type {
   HarnessInspection,
   HarnessModel,
   HarnessModelCatalog,
+  HarnessModelConfigurationOption,
   HarnessModelRef,
   HarnessModelSelectionState,
   HarnessPermissionModeScope,

@@ -1,9 +1,15 @@
 import {
+  configuredModelRef,
   harnessModelCatalogSchema,
   harnessModelRefSchema,
   harnessThinkingOptionIdSchema,
 } from "@codexhost/shared-contracts";
 import { describe, expect, it } from "vitest";
+
+import {
+  configurationSwitchForSelection,
+  modelRefForPickerId,
+} from "../src/renderer-model-configuration.js";
 
 import {
   rendererModelPickerMainMenuPlacement,
@@ -128,6 +134,64 @@ describe("Renderer combined Model and Thinking picker presentation", () => {
     });
     expect(view.thinkingOptions.map(({ id }) => id)).not.toContain("xhigh");
     expect(view.thinkingOptions.map(({ id }) => id)).not.toContain("max");
+  });
+
+  it("keeps the Model label when Fast is selected and exposes one switch above Thinking", () => {
+    const base = harnessModelRefSchema.parse({ id: "openai-codex.gpt" });
+    const off = configuredModelRef(base, { fast: "false" });
+    const on = configuredModelRef(base, { fast: "true" });
+    const fastCatalog = harnessModelCatalogSchema.parse({
+      models: [
+        {
+          ref: base,
+          label: "openai-codex / gpt",
+          supportedThinkingOptionIds: ["low", "high"],
+          configurationOptions: [
+            {
+              id: "fast",
+              label: "Fast",
+              description: "Priority service",
+              currentValue: "false",
+              options: [
+                { value: "false", label: "Off", model: off },
+                { value: "true", label: "On", model: on },
+              ],
+            },
+          ],
+        },
+      ],
+      defaultModel: base,
+      thinkingOptions: [
+        { id: "low", label: "Low" },
+        { id: "high", label: "High" },
+      ],
+    });
+
+    expect(
+      rendererModelPickerPresentation({
+        status: "ready",
+        catalog: fastCatalog,
+        selected: on,
+        selectedThinkingOptionId: harnessThinkingOptionIdSchema.parse("high"),
+      }),
+    ).toMatchObject({
+      modelLabel: "openai-codex / gpt",
+      thinkingLabel: "High",
+      showThinkingSection: true,
+    });
+    expect(configurationSwitchForSelection(fastCatalog, base)).toEqual({
+      label: "Fast",
+      description: "Priority service",
+      checked: false,
+      nextModelId: on.id,
+    });
+    expect(configurationSwitchForSelection(fastCatalog, on)).toMatchObject({
+      checked: true,
+      nextModelId: off.id,
+    });
+    expect(modelRefForPickerId(fastCatalog, on.id)).toEqual(on);
+    expect(modelRefForPickerId(fastCatalog, base.id)).toEqual(base);
+    expect(configurationSwitchForSelection(fastCatalog, undefined)).toBeUndefined();
   });
 
   it("shows a runtime-resolved Model label after the selected Model", () => {

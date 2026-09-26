@@ -30,6 +30,8 @@ import { createAppearanceSettingsPage } from "./appearance-page.js";
 import type { LoadedSessionsClient } from "./loaded-sessions-table.js";
 import { createReleaseNotesElement } from "./release-notes.js";
 import { createAccountsSettingsPage, type RendererCodexAccountClient } from "./accounts-page.js";
+import { createModelsSettingsPage, type RendererModelsClient } from "./models-page.js";
+import { createSkillsSettingsPage, type RendererSkillsClient } from "./skills-page.js";
 
 export type {
   RendererConnectionAgentSnapshot,
@@ -74,7 +76,9 @@ function windowsInstallerDownloadUrl(window: Window | null | undefined, version:
 export const DEFAULT_RENDERER_SETTINGS_PAGE_IDS = [
   "connections",
   "accounts",
+  "models",
   "session-import",
+  "skills",
   "appearance",
   "updates",
   "about",
@@ -621,11 +625,15 @@ export function createDefaultRendererSettingsPages(
   openImportedThread: RendererImportedThreadOpener = () =>
     Promise.reject(new Error("Imported Thread navigation is unavailable")),
   getLoadedSessionsClient: () => LoadedSessionsClient | null = () => null,
+  getModelsClient: () => RendererModelsClient | null = () => null,
+  getSkillsClient: () => RendererSkillsClient | null = () => null,
 ): readonly RendererSettingsPageDefinition[] {
   return Object.freeze([
     createConnectionsSettingsPage(messages, getDiagnostics),
     createAccountsSettingsPage(messages, getAccountClient),
+    createModelsSettingsPage(messages, getModelsClient),
     createSessionImportSettingsPage(messages, getSessionImportClient, openImportedThread),
+    createSkillsSettingsPage(messages, getSkillsClient, getDiagnostics),
     createAppearanceSettingsPage(messages, getLoadedSessionsClient),
     updatesPage(messages, getUpdateClient),
     aboutPage(messages),
@@ -653,3 +661,5 @@ export function createDefaultRendererSettingsRegistry(
 }
 
 export type { RendererCodexAccountClient } from "./accounts-page.js";
+export type { RendererModelsClient } from "./models-page.js";
+export type { RendererSkillsClient } from "./skills-page.js";

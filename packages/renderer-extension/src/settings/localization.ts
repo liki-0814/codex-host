@@ -105,6 +105,9 @@ export interface RendererSettingsMessages {
   readonly sessionImportRetrying: string;
   readonly connectionsDescription: string;
   readonly accountColumnAccount: string;
+  readonly accountColumnActions: string;
+  readonly accountNativeManaged: string;
+  readonly accountDetailsClose: string;
   readonly accountConnected: string;
   readonly accountDefaultBadge: string;
   readonly accountSearch: string;
@@ -113,6 +116,7 @@ export interface RendererSettingsMessages {
   readonly accountNativeManagementHint: string;
   readonly accountDefaultHint: string;
   readonly accountCreditsRemaining: string;
+  readonly accountBalanceRemaining: string;
   readonly accountCreditsLoading: string;
   readonly accountCreditsEmpty: string;
   readonly accountCreditsFailed: string;
@@ -241,6 +245,13 @@ export interface RendererSettingsMessages {
   readonly aboutOpenSource: string;
   readonly aboutStarCallout: string;
   readonly aboutRepository: string;
+  readonly skillsDescription: string;
+  readonly skillsSearchPlaceholder: string;
+  readonly skillsEmpty: string;
+  readonly skillsNoMatches: string;
+  readonly skillsNativeAccess: string;
+  readonly skillsBrokenLink: string;
+  readonly skillsRemoveBrokenLink: string;
   readonly pageLabels: Readonly<Record<DefaultRendererSettingsPageId, string>>;
 }
 
@@ -347,6 +358,9 @@ const ENGLISH_MESSAGES: RendererSettingsMessages = Object.freeze({
   accountConnected: "Accounts",
   accountDefaultBadge: "Current",
   accountColumnAccount: "Account",
+  accountColumnActions: "Manage",
+  accountNativeManaged: "Native management",
+  accountDetailsClose: "Close account details",
   accountSearch: "Search accounts or Agents…",
   accountEmpty:
     "No current identities found. Sign in through Codex Desktop or your Harness's native client.",
@@ -355,6 +369,7 @@ const ENGLISH_MESSAGES: RendererSettingsMessages = Object.freeze({
     "This account comes from {harness}'s native authentication. This page only displays identity and limits; manage sign-in, sign-out and switching in the native client.",
   accountDefaultHint: "This is the current identity for all Codex Threads.",
   accountCreditsRemaining: "Remaining",
+  accountBalanceRemaining: "remaining balance",
   accountCreditsLoading: "Loading limits…",
   accountCreditsEmpty: "No limit data available",
   accountCreditsFailed: "Could not load limits",
@@ -500,10 +515,20 @@ const ENGLISH_MESSAGES: RendererSettingsMessages = Object.freeze({
   aboutOpenSource: "codexhost is an open-source project. The source code is available at:",
   aboutStarCallout: "⭐ If this project helps you, please give us a Star! ⭐",
   aboutRepository: "Open-source repository",
+  skillsDescription:
+    "Skills in ~/.agents/skills. Link one into a connected Harness that reads only its own directory.",
+  skillsSearchPlaceholder: "Search Skills by name or description...",
+  skillsEmpty: "No Skills found",
+  skillsNoMatches: "No Skills match this search",
+  skillsNativeAccess: "read this directory natively, so no link is needed.",
+  skillsBrokenLink: "Link target is missing",
+  skillsRemoveBrokenLink: "Remove link",
   pageLabels: Object.freeze({
     connections: "Connections",
     appearance: "General",
     accounts: "Accounts",
+    models: "Models",
+    skills: "Skills",
     "session-import": "Session Import",
     updates: "Updates",
     about: "About",
@@ -608,6 +633,9 @@ const CHINESE_MESSAGES: RendererSettingsMessages = Object.freeze({
   accountConnected: "账号",
   accountDefaultBadge: "当前",
   accountColumnAccount: "账号",
+  accountColumnActions: "管理",
+  accountNativeManaged: "原生管理",
+  accountDetailsClose: "关闭账号详情",
   accountSearch: "搜索账号或 Agent…",
   accountEmpty: "尚未识别到当前身份，请在 Codex Desktop 或对应 Harness 的原生客户端登录。",
   accountNoMatches: "没有匹配的账号。",
@@ -615,6 +643,7 @@ const CHINESE_MESSAGES: RendererSettingsMessages = Object.freeze({
     "此账号来自 {harness} 的原生登录。这里只读展示身份与额度；登录、退出和切换请在其原生客户端中完成。",
   accountDefaultHint: "所有 Codex 会话当前使用此身份。",
   accountCreditsRemaining: "剩余",
+  accountBalanceRemaining: "剩余余额",
   accountCreditsLoading: "正在读取额度…",
   accountCreditsEmpty: "暂无额度数据",
   accountCreditsFailed: "额度读取失败",
@@ -753,10 +782,19 @@ const CHINESE_MESSAGES: RendererSettingsMessages = Object.freeze({
   aboutOpenSource: "codexhost 是一个开源项目，开源地址：",
   aboutStarCallout: "⭐ 如果这个项目对你有帮助，请给我们一个 Star！⭐",
   aboutRepository: "开源仓库",
+  skillsDescription: "~/.agents/skills 里的技能。只需接入那些仅读取自身目录的已连接 Harness。",
+  skillsSearchPlaceholder: "搜索技能的名称或描述...",
+  skillsEmpty: "没有找到技能",
+  skillsNoMatches: "没有匹配的技能",
+  skillsNativeAccess: "原生读取该目录，无需接入。",
+  skillsBrokenLink: "链接指向的技能已不存在",
+  skillsRemoveBrokenLink: "移除链接",
   pageLabels: Object.freeze({
     connections: "连接",
     appearance: "通用",
     accounts: "账号",
+    models: "模型",
+    skills: "技能",
     "session-import": "会话导入",
     updates: "更新",
     about: "关于",

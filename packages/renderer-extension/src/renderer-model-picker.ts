@@ -1,8 +1,10 @@
-import type {
-  HarnessModelCatalog,
-  HarnessModelRef,
-  HarnessThinkingOption,
-  HarnessThinkingOptionId,
+import {
+  harnessModelRefSchema,
+  modelConfigurationBase,
+  type HarnessModelCatalog,
+  type HarnessModelRef,
+  type HarnessThinkingOption,
+  type HarnessThinkingOptionId,
 } from "@codexhost/shared-contracts";
 
 import {
@@ -21,6 +23,11 @@ import {
 } from "./renderer-trigger-chip-style.js";
 
 import { readModelFavorites, writeModelFavorites } from "./renderer-model-favorites.js";
+import {
+  configurationSwitchForSelection,
+  catalogModelForSelection,
+} from "./renderer-model-configuration.js";
+import { modelVisibilityId, readHiddenModels } from "./renderer-model-visibility.js";
 import { createModelFavoriteIcon, ensureModelOptionStyle } from "./renderer-model-option-style.js";
 
 const MENU_CLASSES =
@@ -83,6 +90,8 @@ export interface RendererModelPickerControl {
   favorites: Set<string>;
   options: Map<string, ModelOptionControl>;
   thinkingOptions: Map<string, ThinkingOptionControl>;
+  configurationSwitch: HTMLButtonElement;
+  selectedModelId: string | undefined;
   close(): void;
   dispose(): void;
 }
@@ -131,9 +140,7 @@ export function thinkingOptionsForModel(
   catalog: HarnessModelCatalog | undefined,
   selected: HarnessModelRef | undefined,
 ): HarnessThinkingOption[] {
-  const supported = catalog?.models.find(
-    (model) => model.ref.id === selected?.id,
-  )?.supportedThinkingOptionIds;
+  const supported = catalogModelForSelection(catalog, selected)?.supportedThinkingOptionIds;
   if (!supported) return [];
   return catalog?.thinkingOptions.filter((option) => supported.includes(option.id)) ?? [];
 }
@@ -159,7 +166,7 @@ function isTransientPickerState(view: RendererModelControlView): boolean {
 export function rendererModelPickerPresentation(
   view: RendererModelControlView,
 ): RendererModelPickerPresentation {
-  const selectedModel = view.catalog?.models.find((model) => model.ref.id === view.selected?.id);
+  const selectedModel = catalogModelForSelection(view.catalog, view.selected);
   const thinkingOptions =
     view.thinkingSelectionSupported === false
       ? []
@@ -293,6 +300,80 @@ function orderModelFavorites(control: RendererModelPickerControl): void {
       if (isFavorite === favorite) control.modelMenu.append(option.row);
     }
   }
+}
+
+function createConfigurationSwitch(): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.hidden = true;
+  button.dataset.modelConfigurationSwitch = "true";
+  button.setAttribute("role", "switch");
+  button.setAttribute("aria-checked", "false");
+  button.className =
+    "mb-1 flex w-full cursor-interaction items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-token-foreground outline-none enabled:hover:bg-token-list-hover-background disabled:cursor-not-allowed disabled:opacity-40";
+  const label = document.createElement("span");
+  label.dataset.switchLabel = "true";
+  label.className = "min-w-0 flex-1 truncate";
+  const track = document.createElement("span");
+  track.dataset.switchTrack = "true";
+  track.setAttribute("aria-hidden", "true");
+  track.style.width = "28px";
+  track.style.height = "16px";
+  track.style.borderRadius = "999px";
+  track.style.padding = "2px";
+  track.style.flex = "none";
+  track.style.display = "flex";
+  track.style.alignItems = "center";
+  track.style.boxSizing = "border-box";
+  track.style.transition = "background-color 160ms ease";
+  const knob = document.createElement("span");
+  knob.dataset.switchKnob = "true";
+  knob.style.width = "12px";
+  knob.style.height = "12px";
+  knob.style.borderRadius = "999px";
+  knob.style.display = "block";
+  knob.style.background = "#fff";
+  knob.style.boxShadow = "0 1px 2px rgb(0 0 0 / 28%), 0 0 0 0.5px rgb(0 0 0 / 18%)";
+  knob.style.transition = "transform 160ms ease";
+  track.append(knob);
+  button.append(label, track);
+  return button;
+}
+
+function paintConfigurationSwitch(button: HTMLButtonElement, checked: boolean): void {
+  const track = button.querySelector<HTMLElement>("[data-switch-track]");
+  const knob = button.querySelector<HTMLElement>("[data-switch-knob]");
+  if (!track || !knob) return;
+  track.style.background = checked
+    ? "var(--color-blue, #3a83f7)"
+    : "color-mix(in srgb, currentColor 22%, transparent)";
+  knob.style.transform = checked ? "translateX(12px)" : "translateX(0)";
+}
+
+function syncConfigurationSwitch(
+  control: RendererModelPickerControl,
+  view: RendererModelControlView,
+): void {
+  const state = configurationSwitchForSelection(view.catalog, view.selected);
+  const button = control.configurationSwitch;
+  if (!state) {
+    button.hidden = true;
+    button.disabled = true;
+    delete button.dataset.nextModelId;
+    button.remove();
+    return;
+  }
+  const label = button.querySelector<HTMLElement>("[data-switch-label]");
+  if (label) label.textContent = state.label;
+  button.hidden = false;
+  button.disabled = control.trigger.disabled;
+  button.dataset.nextModelId = state.nextModelId;
+  button.title = state.description ?? state.label;
+  button.setAttribute("aria-checked", String(state.checked));
+  button.setAttribute("aria-label", state.label);
+  paintConfigurationSwitch(button, state.checked);
+  if (control.menu.firstChild !== button)
+    control.menu.insertBefore(button, control.menu.firstChild);
 }
 
 export function mountRendererModelPicker(
@@ -475,7 +556,7 @@ export function mountRendererModelPicker(
   };
   const open = (): void => {
     if (trigger.disabled || pickerOpen()) return;
-    if (control.thinkingOptions.size === 0) {
+    if (control.thinkingOptions.size === 0 && control.configurationSwitch.hidden) {
       openModelMenu(true);
       return;
     }
@@ -504,6 +585,11 @@ export function mountRendererModelPicker(
     if (target?.dataset.openModelMenu) {
       openModelMenu();
       control.searchInput.focus();
+      return;
+    }
+    if (target?.dataset.modelConfigurationSwitch === "true" && target.dataset.nextModelId) {
+      const nextModelId = target.dataset.nextModelId;
+      onSelectModel(nextModelId);
       return;
     }
     if (target?.dataset.thinkingOptionId) {
@@ -539,9 +625,15 @@ export function mountRendererModelPicker(
         ? event.target.closest<HTMLButtonElement>("button[data-model-id]")
         : null;
     if (!target?.dataset.modelId) return;
+    const clicked = target.dataset.modelId;
+    const current = harnessModelRefSchema.safeParse({ id: control.selectedModelId });
+    const next =
+      current.success && modelConfigurationBase(current.data).id === clicked
+        ? current.data.id
+        : clicked;
     close();
     trigger.focus();
-    onSelectModel(target.dataset.modelId);
+    onSelectModel(next);
   };
   const onModelHover = (): void => openModelMenu();
   const onDocumentPointerDown = (event: PointerEvent): void => {
@@ -581,6 +673,7 @@ export function mountRendererModelPicker(
   document.body.append(menu, modelMenu);
   searchHeader.append(searchInput);
   modelMenu.append(searchHeader, searchEmpty);
+  const configurationSwitch = createConfigurationSwitch();
 
   const control: RendererModelPickerControl = {
     root,
@@ -597,6 +690,8 @@ export function mountRendererModelPicker(
     favorites: new Set(),
     options,
     thinkingOptions,
+    configurationSwitch,
+    selectedModelId: undefined,
     close,
     dispose() {
       close();
@@ -733,7 +828,16 @@ export function renderRendererModelPicker(
     return;
   }
   const presentation = rendererModelPickerPresentation(view);
+  const hiddenModels = readHiddenModels(
+    control.root.ownerDocument.defaultView?.localStorage,
+    harnessId,
+  );
+  const visibleModels = view.catalog?.models.filter(
+    (model) => !hiddenModels.has(modelVisibilityId(model.ref)),
+  );
   const catalogSignature = JSON.stringify({
+    visibleModels,
+    configurationOptions: view.catalog?.models.map((model) => model.configurationOptions),
     models: view.catalog?.models,
     thinkingOptions: presentation.thinkingOptions,
     showThinkingSection: presentation.showThinkingSection,
@@ -745,10 +849,16 @@ export function renderRendererModelPicker(
   // force-close it under the pointer. It refreshes once a real catalog returns.
   const keepOpenMenu = popoverOpen(control.menu) && isTransientPickerState(view);
   if (control.root.dataset.catalogSignature !== catalogSignature && !keepOpenMenu) {
-    rebuildOptions(control, view);
+    rebuildOptions(
+      control,
+      view.catalog ? { ...view, catalog: { ...view.catalog, models: visibleModels ?? [] } } : view,
+    );
     control.root.dataset.catalogSignature = catalogSignature;
   }
 
+  control.selectedModelId = view.selected?.id;
+  control.trigger.disabled = isRendererModelPickerDisabled(view);
+  syncConfigurationSwitch(control, view);
   syncRendererLabelText(control.label, presentation.modelLabel);
   control.label.title = presentation.modelLabel;
   const secondaryLabel = presentation.thinkingLabel ?? presentation.resolvedModelLabel;
@@ -763,15 +873,15 @@ export function renderRendererModelPicker(
     "aria-busy",
     String(view.status === "loading" || view.status === "selecting"),
   );
-  control.trigger.disabled = isRendererModelPickerDisabled(view);
   if (shouldCloseRendererModelPicker(view) && !keepOpenMenu) control.close();
   control.modelButton.disabled = control.trigger.disabled;
   // The search input must not mirror the trigger's disabled state: disabling a
   // focused element blurs it, which would drop the cursor out of the box during
   // transient states (e.g. "selecting"). Filtering is client-side and safe.
 
+  const selectedBase = view.selected ? modelConfigurationBase(view.selected).id : undefined;
   for (const [modelId, option] of control.options) {
-    const selected = modelId === view.selected?.id;
+    const selected = modelId === selectedBase || modelId === view.selected?.id;
     option.button.setAttribute("aria-checked", String(selected));
     option.button.classList.toggle("bg-token-list-hover-background", selected);
     option.button.disabled = control.trigger.disabled;

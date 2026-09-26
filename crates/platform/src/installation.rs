@@ -939,8 +939,7 @@ fn inspect_bundle(bundle: &Path) -> Result<DesktopInstallation, PlatformError> {
         &bundle.join("Contents/MacOS").join(executable_name),
         "Desktop executable",
     )?;
-    let packaged_codex_cli =
-        canonical_macho_executable(&bundle.join("Contents/Resources/codex"), "Codex CLI")?;
+    let packaged_codex_cli = packaged_macos_codex_cli(&bundle)?;
     if !desktop_executable.starts_with(&bundle) || !packaged_codex_cli.starts_with(&bundle) {
         return Err(PlatformError::Invalid(format!(
             "App bundle '{}' resolves an executable outside the bundle",
@@ -961,6 +960,46 @@ fn inspect_bundle(bundle: &Path) -> Result<DesktopInstallation, PlatformError> {
         packaged_codex_cli: packaged_codex_cli.clone(),
         executable_codex_cli: packaged_codex_cli,
     })
+}
+
+/// Older Desktops ship a Mach-O at `Contents/Resources/codex`. Current builds
+/// nest it under `codex-cli/CodexCLI.app` and leave a shell wrapper beside it.
+/// The shell wrapper is not the CLI: the validated target is the Mach-O.
+#[cfg(target_os = "macos")]
+fn packaged_macos_codex_cli(bundle: &Path) -> Result<PathBuf, PlatformError> {
+    let candidates = [
+        bundle.join("Contents/Resources/codex"),
+        bundle.join("Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"),
+    ];
+    let mut errors = Vec::new();
+    for candidate in &candidates {
+        if !candidate.exists() {
+            continue;
+        }
+        match canonical_macho_executable(candidate, "Codex CLI") {
+            Ok(path) if path.starts_with(bundle) => return Ok(path),
+            Ok(path) => {
+                return Err(PlatformError::Invalid(format!(
+                    "App bundle '{}' resolves Codex CLI '{}' outside the bundle",
+                    bundle.display(),
+                    path.display()
+                )));
+            }
+            Err(error) => errors.push(error.to_string()),
+        }
+    }
+    Err(PlatformError::NotFound(if errors.is_empty() {
+        format!(
+            "Codex CLI is not in '{}' at Contents/Resources/codex or Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+            bundle.display()
+        )
+    } else {
+        format!(
+            "Codex CLI in '{}' is unavailable: {}",
+            bundle.display(),
+            errors.join("; ")
+        )
+    }))
 }
 
 #[cfg(target_os = "macos")]
@@ -1107,6 +1146,21 @@ mod tests {
                 installation.executable_codex_cli
             );
         }
+    }
+
+    #[test]
+    fn discovers_the_nested_codex_cli_bundle() {
+        let bundle = temporary_bundle("ChatGPT.app", "com.openai.codex", false);
+        let cli = bundle.join("Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex");
+        fs::create_dir_all(cli.parent().expect("cli parent")).expect("create nested CLI");
+        fs::write(&cli, [0xcf, 0xfa, 0xed, 0xfe]).expect("write nested CLI");
+        fs::set_permissions(&cli, fs::Permissions::from_mode(0o755))
+            .expect("make nested CLI executable");
+        let installation = discover_from_candidates([bundle]).expect("nested CLI");
+        assert_eq!(
+            installation.executable_codex_cli,
+            cli.canonicalize().expect("canonical nested CLI")
+        );
     }
 
     #[test]

@@ -17,10 +17,12 @@ import { CODEXHOST_GITHUB_REPOSITORY_URL, createDefaultRendererSettingsRegistry 
 
 export const SETTINGS_SHELL_ATTRIBUTE = "data-codexhost-settings-shell";
 export const RENDERER_SETTINGS_COLOR_SCHEME = "inherit";
+const NAVIGATION_RAIL_SELECTOR = '[data-app-navigation-rail="true"]';
+const NATIVE_RAIL_SELECTED_ATTRIBUTE = "data-selected";
+const NATIVE_RAIL_IDLE_ATTRIBUTE = "data-suppress-active-style";
 
 export interface RendererSettingsShell {
   readonly root: HTMLElement;
-  readonly dialog: HTMLDialogElement;
   readonly registry: RendererSettingsPageRegistry;
   readonly supported: boolean;
   readonly activePageId: string;
@@ -72,8 +74,10 @@ export function mountRendererSettingsShell(
   // Tailwind declares the cascade layer order, so it must precede the unlayered settings CSS.
   style.textContent = `${tailwindCss}\n${settingsCss}\n${accountsCss}`;
 
-  const dialog = ownerDocument.createElement("dialog");
-  dialog.className = "codexhost-settings-dialog";
+  const surface = ownerDocument.createElement("div");
+  surface.className = "codexhost-settings-page";
+  surface.hidden = true;
+  surface.setAttribute("role", "region");
   const frame = ownerDocument.createElement("div");
   frame.className = "settings-frame";
 
@@ -91,7 +95,7 @@ export function mountRendererSettingsShell(
   brandName.textContent = "CodexHost";
   const brandTitle = ownerDocument.createElement("span");
   brandTitle.className = "settings-brand__title";
-  brandTitle.id = "codexhost-settings-dialog-title";
+  brandTitle.id = "codexhost-settings-page-title";
   brandTitle.textContent = messages.title;
   brandCopy.append(brandName, brandTitle);
   brand.append(brandMark, brandCopy);
@@ -123,9 +127,9 @@ export function mountRendererSettingsShell(
   sidebar.append(navigation);
   layout.append(sidebar, page);
   frame.append(header, layout);
-  dialog.append(frame);
-  dialog.setAttribute("aria-labelledby", brandTitle.id);
-  shadow.append(style, dialog);
+  surface.append(frame);
+  surface.setAttribute("aria-labelledby", brandTitle.id);
+  shadow.append(style, surface);
   ownerDocument.body.append(root);
 
   const navigationState = new RendererSettingsNavigationState(resolvedRegistry);
@@ -215,7 +219,12 @@ export function mountRendererSettingsShell(
   starLabel.textContent = messages.starOnGitHub;
   starLink.append(starLabel);
   navigation.append(starLink);
-  const supported = isRendererSettingsDialogSupported(dialog);
+  const supported = true;
+  let pageOpen = false;
+  let restoreNativeSelection = true;
+  let suspendedRailSelection: { element: HTMLElement; selected: boolean; current: string | null }[] = [];
+  let suspendedActiveRailButtons: HTMLElement[] = [];
+  let selectionObserver: MutationObserver | null = null;
   const focusActiveNavigation = (): void => {
     navigationButtons
       .get(navigationState.activePageId)
@@ -231,7 +240,7 @@ export function mountRendererSettingsShell(
       if (
         !disposed &&
         closeGeneration === lifecycleGeneration &&
-        !dialog.open &&
+        !pageOpen &&
         focusTarget?.isConnected
       ) {
         focusTarget.focus();
@@ -249,54 +258,171 @@ export function mountRendererSettingsShell(
     activatePage(pageId);
     target.focus();
   };
-  const onCloseClick = (): void => api.close();
-  const onDialogClick = (event: MouseEvent): void => {
-    if (event.target === dialog) api.close();
+  const nativeSelectedElements = (): HTMLElement[] =>
+    [...ownerDocument.querySelectorAll<HTMLElement>("[data-selected], [aria-current='page']")].filter(
+      (element) =>
+        !element.closest("[data-codexhost-settings-shell]") &&
+        !element.closest("[data-codexhost-settings-trigger]"),
+    );
+  const nativeRailDestinations = (): HTMLElement[] => {
+    const rail = ownerDocument.querySelector(NAVIGATION_RAIL_SELECTOR);
+    if (!rail) return [];
+    return [...rail.querySelectorAll<HTMLElement>("[data-sidebar-destination]")].filter(
+      (button) => !button.closest("[data-codexhost-settings-trigger]"),
+    );
   };
-  const onDialogClose = (): void => finishClose();
+  const clearNativeRailSelection = (): void => {
+    for (const element of nativeSelectedElements()) {
+      element.removeAttribute(NATIVE_RAIL_SELECTED_ATTRIBUTE);
+      if (element.getAttribute("aria-current") === "page") element.removeAttribute("aria-current");
+    }
+    for (const button of nativeRailDestinations()) {
+      if (button.hasAttribute(NATIVE_RAIL_IDLE_ATTRIBUTE)) continue;
+      if (!suspendedActiveRailButtons.includes(button)) suspendedActiveRailButtons.push(button);
+      button.setAttribute(NATIVE_RAIL_IDLE_ATTRIBUTE, "");
+      button.style.color = "";
+      button.style.background = "";
+    }
+  };
+  const suspendNativeRailSelection = (): void => {
+    suspendedRailSelection = nativeSelectedElements().map((element) => ({
+      element,
+      selected: element.hasAttribute(NATIVE_RAIL_SELECTED_ATTRIBUTE),
+      current: element.getAttribute("aria-current"),
+    }));
+    clearNativeRailSelection();
+    selectionObserver?.disconnect();
+    const Observer = ownerDocument.defaultView?.MutationObserver;
+    const root = ownerDocument.documentElement;
+    if (!Observer || !root) return;
+    selectionObserver = new Observer(() => {
+      if (pageOpen) clearNativeRailSelection();
+    });
+    selectionObserver.observe(root, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: [NATIVE_RAIL_SELECTED_ATTRIBUTE, "aria-current", NATIVE_RAIL_IDLE_ATTRIBUTE],
+    });
+  };
+  const releaseNativeRailSelection = (restore: boolean): void => {
+    selectionObserver?.disconnect();
+    selectionObserver = null;
+    const remembered = suspendedRailSelection;
+    const activeButtons = suspendedActiveRailButtons;
+    suspendedRailSelection = [];
+    suspendedActiveRailButtons = [];
+    if (restore) {
+      for (const button of activeButtons) {
+        if (button.isConnected) button.removeAttribute(NATIVE_RAIL_IDLE_ATTRIBUTE);
+      }
+      if (nativeSelectedElements().length === 0) {
+        for (const { element, selected, current } of remembered) {
+          if (!element.isConnected) continue;
+          if (selected) element.setAttribute(NATIVE_RAIL_SELECTED_ATTRIBUTE, "");
+          if (current) element.setAttribute("aria-current", current);
+        }
+      }
+    }
+  };
+  const placeSurface = (): void => {
+    const rail = ownerDocument.querySelector(NAVIGATION_RAIL_SELECTOR);
+    const bounds = rail?.getBoundingClientRect();
+    const top = bounds && bounds.height > 0 ? bounds.top : 0;
+    const left = bounds && bounds.width > 0 ? bounds.right : 0;
+    surface.style.top = `${Math.max(0, top)}px`;
+    surface.style.left = `${Math.max(0, left)}px`;
+  };
+  const onCloseClick = (): void => api.close();
+  const onKeyDown = (event: KeyboardEvent): void => {
+    if (event.key !== "Escape" || !pageOpen || shadow.querySelector("dialog[open]")) return;
+    event.preventDefault();
+    api.close();
+  };
+  const onRailClick = (event: MouseEvent): void => {
+    if (!pageOpen || !(event.target instanceof Element)) return;
+    const rail = event.target.closest(NAVIGATION_RAIL_SELECTOR);
+    if (!rail || event.target.closest("[data-codexhost-settings-trigger]")) return;
+    if (!event.target.closest('[data-sidebar-destination], [data-slot="popover-trigger"]')) return;
+    restoreNativeSelection = false;
+    api.close();
+  };
+  const onResize = (): void => {
+    if (pageOpen) placeSurface();
+  };
+  let railObserver: ResizeObserver | null = null;
+  const watchRail = (): void => {
+    railObserver?.disconnect();
+    railObserver = null;
+    const rail = ownerDocument.querySelector(NAVIGATION_RAIL_SELECTOR);
+    const Observer = ownerDocument.defaultView?.ResizeObserver;
+    if (!rail || typeof Observer !== "function") return;
+    railObserver = new Observer(() => {
+      if (pageOpen) placeSurface();
+    });
+    railObserver.observe(rail);
+  };
+  const bindPageListeners = (): void => {
+    ownerDocument.addEventListener("keydown", onKeyDown);
+    ownerDocument.addEventListener("click", onRailClick, true);
+    ownerDocument.defaultView?.addEventListener("resize", onResize);
+    watchRail();
+  };
+  const unbindPageListeners = (): void => {
+    ownerDocument.removeEventListener("keydown", onKeyDown);
+    ownerDocument.removeEventListener("click", onRailClick, true);
+    ownerDocument.defaultView?.removeEventListener("resize", onResize);
+    railObserver?.disconnect();
+    railObserver = null;
+  };
   navigation.addEventListener("click", onNavigationClick);
   closeButton.addEventListener("click", onCloseClick);
-  dialog.addEventListener("click", onDialogClick);
-  dialog.addEventListener("close", onDialogClose);
 
   const api: RendererSettingsShell = {
     root,
-    dialog,
     registry: resolvedRegistry,
     supported,
     get activePageId() {
       return navigationState.activePageId;
     },
     get open() {
-      return dialog.open;
+      return pageOpen;
     },
     openSettings(nextOpener, pageId = resolvedRegistry.defaultPageId) {
       if (disposed || !supported || !resolvedRegistry.getPage(pageId)) return false;
       lifecycleGeneration += 1;
       opener = nextOpener?.isConnected ? nextOpener : null;
       activatePage(pageId);
-      try {
-        if (!dialog.open) dialog.showModal();
-      } catch {
-        disposeActivePage();
-        opener = null;
-        return false;
+      if (!pageOpen) {
+        pageOpen = true;
+        restoreNativeSelection = true;
+        suspendNativeRailSelection();
+        placeSurface();
+        surface.hidden = false;
+        bindPageListeners();
       }
       queueMicrotask(focusActiveNavigation);
       return true;
     },
     close() {
-      if (!disposed && dialog.open) dialog.close();
+      if (disposed || !pageOpen) return;
+      pageOpen = false;
+      const restore = restoreNativeSelection;
+      restoreNativeSelection = true;
+      releaseNativeRailSelection(restore);
+      surface.hidden = true;
+      unbindPageListeners();
+      finishClose();
+      root.dispatchEvent(new Event("close"));
     },
     dispose() {
       if (disposed) return;
       disposed = true;
       opener = null;
+      releaseNativeRailSelection(pageOpen && restoreNativeSelection);
+      pageOpen = false;
+      unbindPageListeners();
       navigation.removeEventListener("click", onNavigationClick);
       closeButton.removeEventListener("click", onCloseClick);
-      dialog.removeEventListener("click", onDialogClick);
-      dialog.removeEventListener("close", onDialogClose);
-      if (dialog.open) dialog.close();
       disposeActivePage();
       root.remove();
     },

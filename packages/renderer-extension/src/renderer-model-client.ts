@@ -1,4 +1,20 @@
 import {
+  HARNESS_EXTENSION_METHOD,
+  HARNESS_INSTALLATION_METHOD,
+  HARNESS_SKILLS_INSPECT_METHOD,
+  HARNESS_SKILLS_LINK_METHOD,
+  harnessExtensionParamsSchema,
+  harnessExtensionStateSchema,
+  harnessInstallationParamsSchema,
+  harnessInstallationStateSchema,
+  harnessSkillCatalogSchema,
+  harnessSkillLinkParamsSchema,
+  type HarnessExtensionParams,
+  type HarnessExtensionState,
+  type HarnessInstallationParams,
+  type HarnessInstallationState,
+  type HarnessSkillCatalog,
+  type HarnessSkillLinkParams,
   HARNESS_LAUNCH_SETTINGS_GET_METHOD,
   HARNESS_LAUNCH_SETTINGS_SET_METHOD,
   harnessLaunchSettingsGetSchema,
@@ -181,6 +197,10 @@ export interface RendererModelClient extends Partial<RendererSessionImportClient
   listHarnessPlugins?(): Promise<HarnessPluginListResult>;
   clientForHost?(hostId: string): RendererModelClient | null;
   forkThread(input: ExternalThreadForkParams): Promise<ExternalThreadForkResult>;
+  installation?(input: HarnessInstallationParams): Promise<HarnessInstallationState>;
+  extension?(input: HarnessExtensionParams): Promise<HarnessExtensionState>;
+  inspectSkills?(): Promise<HarnessSkillCatalog>;
+  linkSkill?(input: HarnessSkillLinkParams): Promise<HarnessSkillCatalog>;
   inspectHarness(
     input: HarnessInspectParams,
     options?: RendererRequestOptions,
@@ -274,11 +294,13 @@ export function createRendererModelClient(
   const source = managers[0];
   if (managers.length !== 1 || !source) return null;
   const manager = {
-    sendRequest: createRendererRequestSender((method, params, options) =>
-      options === undefined
+    sendRequest: createRendererRequestSender((method, params, options) => {
+      if (method === HARNESS_INSTALLATION_METHOD && options === undefined)
+        return source.sendRequest(method, params, { timeoutMs: 600_000 });
+      return options === undefined
         ? source.sendRequest(method, params)
-        : source.sendRequest(method, params, options),
-    ),
+        : source.sendRequest(method, params, options);
+    }),
   };
 
   const inspectHarness = async (
@@ -378,6 +400,32 @@ export function createRendererModelClient(
       return externalThreadForkResultSchema.parse(result);
     },
     inspectHarness,
+    async installation(input: HarnessInstallationParams) {
+      return harnessInstallationStateSchema.parse(
+        await manager.sendRequest(
+          HARNESS_INSTALLATION_METHOD,
+          harnessInstallationParamsSchema.parse(input),
+        ),
+      );
+    },
+    async extension(input: HarnessExtensionParams) {
+      return harnessExtensionStateSchema.parse(
+        await manager.sendRequest(HARNESS_EXTENSION_METHOD, harnessExtensionParamsSchema.parse(input)),
+      );
+    },
+    async inspectSkills() {
+      return harnessSkillCatalogSchema.parse(
+        await manager.sendRequest(HARNESS_SKILLS_INSPECT_METHOD, {}),
+      );
+    },
+    async linkSkill(input: HarnessSkillLinkParams) {
+      return harnessSkillCatalogSchema.parse(
+        await manager.sendRequest(
+          HARNESS_SKILLS_LINK_METHOD,
+          harnessSkillLinkParamsSchema.parse(input),
+        ),
+      );
+    },
     async listHarnessPlugins(): Promise<HarnessPluginListResult> {
       return harnessPluginListResultSchema.parse(
         await manager.sendRequest(HARNESS_PLUGIN_LIST_METHOD, {}),

@@ -142,6 +142,12 @@ export function parseAntigravityUsageCommand(
   };
 }
 
+/** Account identity is the product group, not the window already shown as meters. */
+export function antigravityAccountIdentityLabel(product: string): string {
+  const separator = product.lastIndexOf(" · ");
+  return separator > 0 ? product.slice(0, separator) : product;
+}
+
 /** Runs `/usage` and returns the quota snapshot, or null when unavailable. */
 export async function fetchAntigravityQuota(
   run: AntigravityCommandRunner,

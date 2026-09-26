@@ -1,6 +1,7 @@
 import type {
   HarnessAccountSnapshot,
   HarnessCommandCatalog,
+  HarnessInstallationState,
   HarnessId,
   HarnessInspection,
   HarnessModelRef,
@@ -557,6 +558,13 @@ export interface HarnessSessionImportCapability {
 }
 
 export interface HarnessAdapter {
+  /** Native CLI maintenance. Does not update the Host plugin or start a Session. */
+  installation?(action: "check" | "update"): Promise<HarnessInstallationState>;
+  /** Install or inspect a bundled extension owned by the Adapter. */
+  extension?(
+    id: string,
+    action: "inspect" | "install",
+  ): Promise<{ installed: boolean; available?: boolean; updateAvailable?: boolean }>;
   readonly credentialExport?: HarnessCredentialExport;
   readonly credentialImports?: HarnessCredentialImports;
   readonly harnessId: HarnessId;
@@ -576,6 +584,11 @@ export interface HarnessAdapter {
    * Implementations must bound requests and release inspection resources on close.
    */
   inspectAccount?(): Promise<HarnessAccountSnapshot | null>;
+  /**
+   * Same read as {@link inspectAccount} when one Harness has several billing
+   * sources. Host prefers this and still exposes the first snapshot as `account`.
+   */
+  inspectAccounts?(): Promise<readonly HarnessAccountSnapshot[]>;
 
   inspect(input?: InspectHarnessInput): Promise<HarnessInspection>;
   open(input: OpenSessionInput): Promise<HarnessResult<HarnessSession>>;

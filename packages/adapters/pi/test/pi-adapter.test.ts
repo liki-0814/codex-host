@@ -1155,7 +1155,9 @@ describe("Pi HarnessAdapter Session", () => {
   });
 
   it("does not manufacture a Permission Mode capability", async () => {
-    const { adapter, dependencies } = fixture();
+    const { adapter, dependencies } = fixture({
+      environment: { ...process.env, HOME: "/tmp/codexhost-pi-without-extensions" },
+    });
     await expect(adapter.inspect({ cwd: "/synthetic" })).resolves.toMatchObject({
       status: "ready",
       capabilities: { configuration: { selectPermissionMode: false } },

@@ -142,11 +142,10 @@
 .settings-account-table th:nth-child(1) {
   width: 32%;
 }
-.settings-account-table th:nth-child(2),
-.settings-account-table th:nth-child(3) {
-  width: 24%;
+.settings-account-table th:nth-child(2) {
+  width: 48%;
 }
-.settings-account-table th:nth-child(4) {
+.settings-account-table th:nth-child(3) {
   width: 20%;
   text-align: right;
 }
@@ -281,6 +280,10 @@
 .settings-account-usage__percent--hot {
   color: var(--settings-danger);
 }
+.settings-account-usage__percent--empty {
+  color: var(--settings-muted);
+  font-weight: 500;
+}
 .settings-account-usage__bar {
   grid-column: 1 / -1;
   height: 4px;
@@ -414,6 +417,33 @@
   outline-offset: -2px;
 }
 
+.settings-account-management-cell {
+  text-align: right;
+}
+.settings-account-management,
+.settings-account-native {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.settings-account-native {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  color: var(--settings-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.settings-account-details {
+  display: inline-flex;
+}
+.settings-account-dialog__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
 .settings-account-dialog {
   position: fixed;
   width: min(360px, calc(100vw - 40px));
@@ -752,4 +782,87 @@
   .settings-account-usage__bar > span {
     background: Highlight;
   }
+}
+
+.settings-account-quota-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px 24px;
+}
+.settings-account-quota-grid > .settings-account-usage__meter {
+  min-width: 0;
+}
+.settings-account-quota-grid .settings-account-usage__meter {
+  grid-template-rows: auto 4px auto auto;
+}
+.settings-account-quota-grid .settings-account-usage__title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  grid-column: 1;
+  grid-row: 1;
+  align-self: end;
+  overflow: hidden;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.settings-account-usage__period {
+  flex: none;
+}
+.settings-account-usage__scope {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-account-quota-grid .settings-account-usage__percent {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+}
+.settings-account-quota-grid .settings-account-usage__bar {
+  grid-row: 2;
+}
+.settings-account-quota-grid .settings-account-quota-amount,
+.settings-account-quota-grid .settings-account-usage__sub {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  white-space: nowrap;
+}
+
+@container (max-width: 480px) {
+  .settings-account-quota-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings-account-quota-grid > .settings-account-usage__meter {
+    grid-column: auto !important;
+    grid-row: auto !important;
+  }
+}
+
+.settings-account-quota-amount {
+  margin-top: 8px;
+  font-size: 12px;
+  text-align: right;
+  color: var(--settings-muted);
+}
+
+.settings-account-balance {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-account-balance strong {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.settings-account-balance__caption {
+  color: var(--settings-muted);
+  font-size: 12px;
+  line-height: 18px;
 }

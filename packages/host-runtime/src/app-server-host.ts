@@ -10,6 +10,18 @@ import {
   credentialImportsParamsSchema,
 } from "@codexhost/shared-contracts";
 import { handleCredentialImports } from "./credential-imports.js";
+import { applySkillLink, readSkillCatalog } from "./harness-skills.js";
+import {
+  HARNESS_EXTENSION_METHOD,
+  HARNESS_INSTALLATION_METHOD,
+  HARNESS_SKILLS_INSPECT_METHOD,
+  HARNESS_SKILLS_LINK_METHOD,
+  harnessExtensionParamsSchema,
+  harnessExtensionStateSchema,
+  harnessInstallationParamsSchema,
+  harnessInstallationStateSchema,
+  harnessSkillLinkParamsSchema,
+} from "@codexhost/shared-contracts";
 import {
   rewriteDelegationMentionInput,
   rewriteDelegationMentionText,
@@ -17,7 +29,11 @@ import {
 import { managedDelegationSkillReference } from "./delegation-skill.js";
 import { AccountRateLimits } from "./codex-runtime/account-rate-limits.js";
 import { NativeAccountObserver } from "./native-account-observer.js";
-import { HarnessAccountInspectionCache, listHarnessAccountSources } from "./harness-accounts.js";
+import {
+  HarnessAccountInspectionCache,
+  listedHarnessAccounts,
+  listHarnessAccountSources,
+} from "./harness-accounts.js";
 import type { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
@@ -984,6 +1000,87 @@ export class AppServerHost {
       }
       return;
     }
+    if (request.method === HARNESS_INSTALLATION_METHOD) {
+      const params = harnessInstallationParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        await this.#writer.json(rpcError(request, -32602, "Invalid Harness installation request"));
+        return;
+      }
+      const adapter = this.#externalAdapters.get(params.data.harnessId);
+      if (!adapter?.installation) {
+        await this.#writer.json(
+          rpcError(request, -32077, "Harness updates are unavailable on this Host"),
+        );
+        return;
+      }
+      try {
+        const result = harnessInstallationStateSchema.parse(
+          await adapter.installation(params.data.action),
+        );
+        await this.#writer.json(
+          rpcEnvelope(request, {
+            result: {
+              currentVersion: result.currentVersion,
+              latestVersion: result.latestVersion,
+              updateAvailable: result.updateAvailable,
+              canUpdate: result.canUpdate,
+              ...(result.message !== undefined ? { message: result.message } : {}),
+            },
+          }),
+        );
+      } catch (error) {
+        await this.#writer.json(rpcError(request, -32077, errorMessage(error)));
+      }
+      return;
+    }
+    if (request.method === HARNESS_EXTENSION_METHOD) {
+      const params = harnessExtensionParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        await this.#writer.json(rpcError(request, -32602, "Invalid Harness extension request"));
+        return;
+      }
+      const adapter = this.#externalAdapters.get(params.data.harnessId);
+      if (!adapter?.extension) {
+        await this.#writer.json(
+          rpcError(request, -32601, "Harness extension installation is unavailable"),
+        );
+        return;
+      }
+      try {
+        const result = harnessExtensionStateSchema.parse(
+          await adapter.extension(params.data.extensionId, params.data.action),
+        );
+        await this.#writer.json(
+          rpcEnvelope(request, {
+            result: {
+              installed: result.installed,
+              ...(result.available !== undefined ? { available: result.available } : {}),
+              ...(result.updateAvailable !== undefined
+                ? { updateAvailable: result.updateAvailable }
+                : {}),
+            },
+          }),
+        );
+      } catch {
+        await this.#writer.json(rpcError(request, -32077, "Harness extension installation failed"));
+      }
+      return;
+    }
+    if (
+      request.method === HARNESS_SKILLS_INSPECT_METHOD ||
+      request.method === HARNESS_SKILLS_LINK_METHOD
+    ) {
+      try {
+        const catalog =
+          request.method === HARNESS_SKILLS_INSPECT_METHOD
+            ? await readSkillCatalog()
+            : await applySkillLink(harnessSkillLinkParamsSchema.parse(requestObject(request)));
+        await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(catalog) }));
+      } catch (error) {
+        await this.#writer.json(rpcError(request, -32078, errorMessage(error)));
+      }
+      return;
+    }
     if (
       request.method === "codexhost/update/check" ||
       request.method === "codexhost/update/start" ||
@@ -1082,9 +1179,7 @@ export class AppServerHost {
           ),
         );
         const result = harnessAccountListResultSchema.parse({
-          accounts: inspections.flatMap(({ harnessId, harnessName, account }) =>
-            account ? [{ ...account, harnessId, harnessName }] : [],
-          ),
+          accounts: inspections.flatMap((inspection) => listedHarnessAccounts(inspection)),
         });
         await this.#writer.json(rpcEnvelope(request, { result: jsonValueSchema.parse(result) }));
       });

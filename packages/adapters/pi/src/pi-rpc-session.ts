@@ -11,6 +11,11 @@ import {
   type JsonValue,
 } from "@codexhost/shared-contracts";
 
+import { installedPiFastExtension, PI_FAST_COMMAND } from "./pi-fast-extension.js";
+import {
+  installedPiPermissionExtension,
+  PI_PERMISSION_COMMAND,
+} from "./pi-permission-extension.js";
 import { parsePiNativeCommands, type PiNativeCommand } from "./pi-slash-commands.js";
 import type { PiEmptySessionConfiguration } from "./pi-empty-session.js";
 import { resolvePiExecutable, withNodeRuntimeOnPath } from "./command.js";
@@ -444,6 +449,9 @@ export function piRpcProcessCommand(
     ? ["--thinking", options.emptySessionConfiguration.thinkingLevel]
     : [];
   const arguments_ = [
+    ...[installedPiPermissionExtension(options.environment), installedPiFastExtension(options.environment)].flatMap(
+      (file) => (file ? ["--extension", file] : []),
+    ),
     "--mode",
     "rpc",
     ...modelArguments,
@@ -730,6 +738,26 @@ export class PiRpcSession {
       if (error instanceof PiRpcFaultError) this.#fail(error);
       throw error;
     }
+  }
+
+  async selectPermissionMode(mode: string): Promise<void> {
+    if (mode !== "auto" && mode !== "approve") throw new Error("Unknown Pi permission mode");
+    await this.#selectExtensionMode(PI_PERMISSION_COMMAND, mode);
+  }
+
+  async selectFastMode(enabled: boolean): Promise<void> {
+    await this.#selectExtensionMode(PI_FAST_COMMAND, enabled ? "on" : "off");
+  }
+
+  async #selectExtensionMode(name: string, mode: string): Promise<void> {
+    const response = await this.#send("get_commands", {});
+    const result = isRecord(response.data) ? response.data : {};
+    if (
+      !Array.isArray(result.commands) ||
+      !result.commands.some((command) => isRecord(command) && command.name === name)
+    )
+      throw new Error("Pi extension is not loaded. Reopen this conversation.");
+    await this.#send("prompt", { message: `/${name} ${mode}` });
   }
 
   async selectModel(model: PiNativeModelRef): Promise<PiSessionState> {

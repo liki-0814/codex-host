@@ -50,12 +50,31 @@ export const harnessThinkingOptionSchema = z
 
 export type HarnessThinkingOption = z.infer<typeof harnessThinkingOptionSchema>;
 
+/** Opaque Adapter-owned choices. The Renderer selects the supplied Model Ref and does not interpret the parameter. */
+export const harnessModelConfigurationOptionSchema = z
+  .object({
+    id: nonBlankTextSchema,
+    label: nonBlankTextSchema,
+    description: z.string().optional(),
+    currentValue: z.string(),
+    options: z.array(
+      z
+        .object({ value: z.string(), label: nonBlankTextSchema, model: harnessModelRefSchema })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export type HarnessModelConfigurationOption = z.infer<typeof harnessModelConfigurationOptionSchema>;
+
 export const harnessModelSchema = z
   .object({
     ref: harnessModelRefSchema,
+    configurationOptions: z.array(harnessModelConfigurationOptionSchema).optional(),
     label: nonBlankTextSchema.max(HARNESS_MODEL_LABEL_MAX_LENGTH),
     resolvedModelLabel: harnessResolvedModelLabelSchema.optional(),
     supportedThinkingOptionIds: z.array(harnessThinkingOptionIdSchema).optional(),
+    selectable: z.boolean().optional(),
   })
   .strict();
 
@@ -80,6 +99,7 @@ const harnessThinkingOptionsSchema = z
 export const harnessModelCatalogSchema = z
   .object({
     models: z.array(harnessModelSchema),
+    configurationOptions: z.array(harnessModelConfigurationOptionSchema).optional(),
     defaultModel: harnessModelRefSchema.optional(),
     thinkingOptions: harnessThinkingOptionsSchema,
     defaultThinkingOptionId: harnessThinkingOptionIdSchema.optional(),

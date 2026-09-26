@@ -1,4 +1,8 @@
-import { createRendererSettingsBrandIcon, createRendererSettingsIcon } from "./icons.js";
+import {
+  createRendererSettingsBrandIcon,
+  createRendererSettingsIcon,
+  setRendererSettingsBrandIconSelected,
+} from "./icons.js";
 import {
   DEFAULT_RENDERER_SETTINGS_MESSAGES,
   type RendererSettingsMessages,
@@ -11,13 +15,20 @@ const SETTINGS_APPLICATION_HEADER_SELECTOR = 'header[data-pip-obstacle="app-shel
 const SETTINGS_HEADER_SLOT_SELECTOR = ':scope > [data-test-id="header-shell-slot"]';
 const SETTINGS_HEADER_NATIVE_ACTION_GROUP_SELECTOR =
   ':scope > [data-app-shell-header-obstacle="true"]';
+const NAVIGATION_RAIL_SELECTOR = '[data-app-navigation-rail="true"]';
+const NAVIGATION_RAIL_PLUGIN_SELECTOR = '[data-sidebar-destination="builtin:customize"]';
 const UPDATE_ACCENT = "#3b82f6";
+const SETTINGS_TRIGGER_TOOLTIP = "CodexHost";
+const SETTINGS_TRIGGER_PLACEMENT_ATTRIBUTE = "data-codexhost-trigger-placement";
+// Idle rail icons use this mix of the rail's text color. Selection uses the text color itself.
+const RAIL_IDLE_ICON_COLOR = "color-mix(in srgb, currentColor 49.4%, transparent)";
 
 export interface RendererSettingsTriggerControl {
   root: HTMLElement;
   button: HTMLButtonElement;
   updateButton: HTMLButtonElement;
   setUpdateAvailable(available: boolean): void;
+  setSelected(selected: boolean): void;
   dispose(): void;
 }
 
@@ -41,12 +52,14 @@ export interface RendererSettingsHeaderTriggerControl {
   readonly root: HTMLElement | null;
   refresh(): boolean;
   setUpdateAvailable(available: boolean): void;
+  setSelected(selected: boolean): void;
   dispose(): void;
 }
 
 interface RendererSettingsHeaderInsertionPoint {
   parent: HTMLElement;
   before: ChildNode | null;
+  rail: boolean;
 }
 
 export interface RendererSettingsContractInspection {
@@ -116,6 +129,79 @@ export function inspectRendererSettingsContract(
   };
 }
 
+function measurableElement(value: unknown): HTMLElement | null {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    "children" in value &&
+    "classList" in value &&
+    "getBoundingClientRect" in value
+  ) {
+    return value as HTMLElement;
+  }
+  return null;
+}
+
+/** Icon slot directly under the plugin destination in the left navigation rail. */
+function findNavigationRailInsertionPoint(
+  ownerDocument: Document,
+): RendererSettingsHeaderInsertionPoint | null {
+  const rail = measurableElement(ownerDocument.querySelector(NAVIGATION_RAIL_SELECTOR));
+  if (!rail) return null;
+  const bounds = measuredBounds(rail);
+  if (bounds.width <= 0 || bounds.height <= 0) return null;
+  const plugin = rail.querySelector(NAVIGATION_RAIL_PLUGIN_SELECTOR);
+  if (!plugin) return null;
+  let row: Element = plugin;
+  while (
+    row.parentElement &&
+    row.parentElement !== rail &&
+    !String(row.parentElement.className).includes("flex-col")
+  ) {
+    row = row.parentElement;
+  }
+  const parent = measurableElement(row.parentElement);
+  if (!parent) return null;
+  let before = row.nextSibling;
+  if (isSettingsTrigger(before)) before = before.nextSibling;
+  return { parent, before, rail: true };
+}
+
+function isSettingsTrigger(node: ChildNode | null): node is Element {
+  if (!node || typeof node !== "object" || !("getAttribute" in node)) return false;
+  const read = (node as Element).getAttribute;
+  return typeof read === "function" && read.call(node, SETTINGS_TRIGGER_ATTRIBUTE) != null;
+}
+
+function applyTriggerPlacement(button: HTMLElement, rail: boolean): void {
+  const size = rail ? "36px" : "28px";
+  button.style.width = size;
+  button.style.height = size;
+  button.style.borderRadius = rail ? "12px" : "8px";
+  button.setAttribute(SETTINGS_TRIGGER_PLACEMENT_ATTRIBUTE, rail ? "rail" : "header");
+  const icon = button.children[0];
+  if (icon instanceof Object && "style" in icon) {
+    const iconSize = rail ? "20px" : "16px";
+    const style = (icon as HTMLElement).style;
+    style.width = iconSize;
+    style.height = iconSize;
+  }
+  applyTriggerColor(button, rail);
+}
+
+function applyTriggerColor(button: HTMLElement, rail: boolean): void {
+  const selected = button.getAttribute("aria-expanded") === "true";
+  button.style.color = rail && !selected ? RAIL_IDLE_ICON_COLOR : "inherit";
+  button.style.background = "transparent";
+}
+
+function setTriggerSelected(button: HTMLElement, selected: boolean): void {
+  button.setAttribute("aria-expanded", selected ? "true" : "false");
+  const icon = button.children[0];
+  if (icon) setRendererSettingsBrandIconSelected(icon, selected);
+  applyTriggerColor(button, button.getAttribute(SETTINGS_TRIGGER_PLACEMENT_ATTRIBUTE) === "rail");
+}
+
 function findNativeHeaderActionGroup(header: HTMLElement): HTMLElement | null {
   const surface = header.querySelector<HTMLElement>(SETTINGS_HEADER_SURFACE_SELECTOR);
   if (!surface) return null;
@@ -128,6 +214,9 @@ function findNativeHeaderActionGroup(header: HTMLElement): HTMLElement | null {
 function findRendererSettingsHeaderInsertionPoint(
   ownerDocument: Document,
 ): RendererSettingsHeaderInsertionPoint | null {
+  const rail = findNavigationRailInsertionPoint(ownerDocument);
+  if (rail) return rail;
+
   const header = ownerDocument.querySelector<HTMLElement>(SETTINGS_APPLICATION_HEADER_SELECTOR);
   if (!header) return null;
 
@@ -136,7 +225,7 @@ function findRendererSettingsHeaderInsertionPoint(
 
   const nativeActionGroup = findNativeHeaderActionGroup(header);
   if (nativeActionGroup?.parentElement) {
-    return { parent: nativeActionGroup.parentElement, before: nativeActionGroup };
+    return { parent: nativeActionGroup.parentElement, before: nativeActionGroup, rail: false };
   }
 
   const endSlot = [...header.querySelectorAll<HTMLElement>(SETTINGS_HEADER_SLOT_SELECTOR)]
@@ -145,7 +234,7 @@ function findRendererSettingsHeaderInsertionPoint(
       return bounds.width > 0 && bounds.height > 0;
     })
     .toSorted((left, right) => measuredBounds(right).left - measuredBounds(left).left)[0];
-  return endSlot ? { parent: header, before: endSlot } : null;
+  return endSlot ? { parent: header, before: endSlot, rail: false } : null;
 }
 
 export function mountRendererSettingsTrigger(
@@ -171,14 +260,14 @@ export function mountRendererSettingsTrigger(
   button.type = "button";
   button.disabled = !available;
   button.setAttribute("aria-label", messages.openSettings);
-  button.setAttribute("aria-haspopup", "dialog");
-  button.title = available ? messages.settingsButtonTitle : messages.settingsUnavailableTitle;
+  button.setAttribute("aria-expanded", "false");
+  button.title = available ? SETTINGS_TRIGGER_TOOLTIP : messages.settingsUnavailableTitle;
   button.style.display = "inline-flex";
   button.style.alignItems = "center";
   button.style.justifyContent = "center";
+  button.style.width = "28px";
   button.style.height = "28px";
-  button.style.padding = "0 12px";
-  button.style.gap = "6px";
+  button.style.padding = "0";
   button.style.border = "0";
   button.style.borderRadius = "8px";
   button.style.background = "transparent";
@@ -187,21 +276,12 @@ export function mountRendererSettingsTrigger(
   button.style.opacity = available ? "1" : "0.5";
   button.style.outlineOffset = "2px";
   button.style.setProperty("-webkit-app-region", "no-drag");
-  button.append(createRendererSettingsBrandIcon(24));
-
-  const brandLabel = ownerDocument.createElement("span");
-  brandLabel.textContent = "CodexHost";
-  brandLabel.style.fontSize = "13px";
-  brandLabel.style.fontWeight = "600";
-  brandLabel.style.lineHeight = "1";
-  brandLabel.style.whiteSpace = "nowrap";
-  button.append(brandLabel);
+  button.append(createRendererSettingsBrandIcon(16));
 
   const updateButton = ownerDocument.createElement("button");
   updateButton.type = "button";
   updateButton.disabled = !available;
   updateButton.setAttribute("aria-label", messages.updateAvailable);
-  updateButton.setAttribute("aria-haspopup", "dialog");
   updateButton.title = messages.updateAvailable;
   updateButton.style.display = "none";
   updateButton.style.alignItems = "center";
@@ -222,10 +302,11 @@ export function mountRendererSettingsTrigger(
   updateButton.append(createRendererSettingsIcon("updates", 16));
 
   const onPointerEnter = (): void => {
-    if (!button.disabled) button.style.background = "rgba(127, 127, 127, 0.16)";
+    if (button.disabled || button.getAttribute("aria-expanded") === "true") return;
+    button.style.background = "rgba(127, 127, 127, 0.16)";
   };
   const onPointerLeave = (): void => {
-    button.style.background = "transparent";
+    applyTriggerColor(button, button.getAttribute(SETTINGS_TRIGGER_PLACEMENT_ATTRIBUTE) === "rail");
   };
   const onClick = (event: MouseEvent): void => {
     event.stopPropagation();
@@ -257,6 +338,9 @@ export function mountRendererSettingsTrigger(
       root.toggleAttribute("data-update-available", updateAvailable);
       updateButton.style.display = updateAvailable ? "inline-flex" : "none";
     },
+    setSelected(selected) {
+      setTriggerSelected(button, selected);
+    },
     dispose() {
       button.removeEventListener("pointerenter", onPointerEnter);
       button.removeEventListener("pointerleave", onPointerLeave);
@@ -278,6 +362,7 @@ export function installRendererSettingsHeaderTrigger(options: {
   const ownerDocument = options.ownerDocument ?? document;
   let trigger: RendererSettingsTriggerControl | null = null;
   let updateAvailable = false;
+  let selected = false;
   let disposed = false;
 
   const refresh = (): boolean => {
@@ -306,6 +391,8 @@ export function installRendererSettingsHeaderTrigger(options: {
     ) {
       insertionPoint.parent.insertBefore(trigger.root, insertionPoint.before);
     }
+    applyTriggerPlacement(trigger.button, insertionPoint.rail);
+    trigger.setSelected(selected);
     return true;
   };
 
@@ -318,6 +405,10 @@ export function installRendererSettingsHeaderTrigger(options: {
     setUpdateAvailable(available) {
       updateAvailable = available;
       trigger?.setUpdateAvailable(available);
+    },
+    setSelected(next) {
+      selected = next;
+      trigger?.setSelected(next);
     },
     dispose() {
       if (disposed) return;

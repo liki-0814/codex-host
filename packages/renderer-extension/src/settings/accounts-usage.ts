@@ -34,6 +34,12 @@ export function creditsPeriodLabel(
 export function creditsProductLabel(product: string, messages: RendererSettingsMessages): string {
   if (product === "GrokBuild" || product === "Build") return messages.accountCreditsBuild;
   if (product === "7-day window") return messages.accountCreditsPeriodSevenDay;
+  if (product === "Auto · monthly") return `Auto · ${messages.accountCreditsPeriodMonthly}`;
+  if (product === "API · monthly") return `API · ${messages.accountCreditsPeriodMonthly}`;
+  if (product === "Shared resource credits")
+    return messages.locale === "zh-CN" ? "共享资源包" : "Shared resource package";
+  if (product === "Plan credits")
+    return messages.locale === "zh-CN" ? "套餐 Credits" : "Plan credits";
   if (product === "GrokChat") return "Chat";
   if (product === "GrokImagine") return "Imagine";
   if (product === "GrokVoice") return "Voice";
@@ -76,11 +82,21 @@ export function resetCreditDetailLine(
 
 type AccountUsagePeriod = "five_hour" | "seven_day";
 
+interface AccountUsageAmount {
+  readonly used?: number | undefined;
+  readonly limit?: number | undefined;
+  readonly unit?: string | undefined;
+}
+
 interface AccountUsageWindow {
   readonly label: string;
   readonly usedPercent: number;
   readonly resetsAt: string | undefined;
   readonly scoped: boolean;
+  readonly amount?: AccountUsageAmount;
+  /** Model group shown after the period so a long name ellipsizes without hiding "5 小时". */
+  readonly titleScope?: string;
+  readonly titlePeriod?: string;
 }
 
 interface AccountUsageRow {
@@ -104,6 +120,12 @@ function comparisonPeriod(
   if (periodType === "five_hour") return "five_hour";
   if (periodType === "weekly" || periodType === "seven_day") return "seven_day";
   return null;
+}
+
+/** Identity column shows the product, not the leading window already drawn as meters. */
+export function accountIdentityLabel(label: string | undefined): string | undefined {
+  if (!label) return undefined;
+  return scopedUsageProduct(label)?.scope ?? label;
 }
 
 function scopedUsageProduct(product: string): {
@@ -159,8 +181,11 @@ function splitUsageWindows(
   };
 
   const primary: AccountUsageWindow = {
-    label: credits.label ?? creditsPeriodLabel(credits.periodType, messages),
+    label: credits.label
+      ? creditsProductLabel(credits.label, messages)
+      : creditsPeriodLabel(credits.periodType, messages),
     usedPercent: credits.usedPercent,
+    amount: credits,
     resetsAt: credits.resetsAt,
     scoped: Boolean(credits.label && scopedUsageProduct(credits.label)),
   };
@@ -176,6 +201,7 @@ function splitUsageWindows(
     const window: AccountUsageWindow = {
       label: creditsProductLabel(product.product, messages),
       usedPercent: product.usagePercent,
+      amount: product,
       resetsAt: product.resetsAt,
       scoped: Boolean(scoped),
     };
@@ -189,8 +215,7 @@ function splitUsageWindows(
   }
 
   const structured = [...scopedRows.values()].flat();
-  let rows = Object.keys(generic.columns).length > 0 ? [generic, ...structured] : structured;
-  if (rows.length === 0) rows = [generic];
+  let rows = composeUsageRows(generic, structured);
   if (filter === "weekly-only") {
     rows = rows
       .map((row) => ({
@@ -202,6 +227,63 @@ function splitUsageWindows(
     return { rows, additional: [] };
   }
   return { rows, additional };
+}
+
+/**
+ * A lone scoped window and the account-level window of the other period share one row,
+ * so the 5-hour meter stays in the left column and the weekly meter stays in the right.
+ */
+function composeUsageRows(
+  generic: AccountUsageRow,
+  structured: readonly AccountUsageRow[],
+): AccountUsageRow[] {
+  if (structured.length === 0) return [generic];
+  if (structured.length !== 1 || Object.keys(generic.columns).length === 0) {
+    return Object.keys(generic.columns).length > 0 ? [generic, ...structured] : [...structured];
+  }
+  const only = structured[0];
+  if (!only) return [generic];
+  const columns = { ...only.columns };
+  const leftover: AccountUsageRow["columns"] = {};
+  for (const period of ["five_hour", "seven_day"] as const) {
+    const genericWindow = generic.columns[period];
+    if (!genericWindow) continue;
+    if (columns[period]) leftover[period] = genericWindow;
+    else columns[period] = genericWindow;
+  }
+  const merged: AccountUsageRow = { ...only, columns };
+  return Object.keys(leftover).length > 0 ? [{ columns: leftover }, merged] : [merged];
+}
+
+function renderUsageTitle(
+  document: Document,
+  label: HTMLElement,
+  window: AccountUsageWindow,
+): void {
+  label.title = window.label;
+  if (window.titlePeriod) {
+    const period = document.createElement("span");
+    period.className = "settings-account-usage__period";
+    period.textContent = window.titlePeriod;
+    label.append(period);
+  }
+  if (window.titleScope) {
+    const scope = document.createElement("span");
+    scope.className = "settings-account-usage__scope";
+    scope.textContent = window.titleScope;
+    label.append(scope);
+    return;
+  }
+  if (window.titlePeriod) return;
+  const text = document.createElement("span");
+  text.className = "settings-account-usage__scope";
+  text.textContent = window.label;
+  label.append(text);
+}
+
+function placeUsageMeter(meter: HTMLElement, column: 1 | 2 | "span", row: number): void {
+  meter.style.gridColumn = column === "span" ? "1 / -1" : String(column);
+  meter.style.gridRow = String(row);
 }
 
 function renderUsageWindow(
@@ -216,16 +298,21 @@ function renderUsageWindow(
     : "settings-account-usage__meter";
   const label = document.createElement("span");
   label.className = "settings-account-usage__title";
-  label.textContent = window.label;
-  label.title = window.label;
-  const value = display === "remaining" ? 100 - window.usedPercent : window.usedPercent;
+  renderUsageTitle(document, label, window);
+  const emptyCap = window.amount?.limit === 0;
+  const value = emptyCap
+    ? 0
+    : display === "remaining"
+      ? 100 - window.usedPercent
+      : window.usedPercent;
   const valueLabel =
     display === "remaining" ? messages.accountCreditsRemaining : messages.accountCreditsUsed;
   const tone = rendererCreditsTone(window.usedPercent);
   const percent = document.createElement("div");
   percent.className = `settings-account-usage__percent settings-account-usage__percent--${tone}`;
   const number = document.createElement("span");
-  number.textContent = formatRendererCreditsPercent(value);
+  number.textContent = emptyCap ? "—" : formatRendererCreditsPercent(value);
+  if (emptyCap) percent.className += " settings-account-usage__percent--empty";
   const reset = window.resetsAt
     ? renderAccountResetTime(document, window.resetsAt, messages)
     : null;
@@ -242,6 +329,15 @@ function renderUsageWindow(
   fill.style.width = `${Math.min(100, Math.max(0, value))}%`;
   bar.append(fill);
   meter.append(label, percent, bar);
+  const credits = window.amount;
+  if (credits && credits.used !== undefined && credits.limit !== undefined && credits.unit) {
+    const amount = document.createElement("div");
+    amount.className = "settings-account-quota-amount";
+    const quantity =
+      display === "remaining" ? Math.max(0, credits.limit - credits.used) : credits.used;
+    amount.textContent = `${quantity.toLocaleString(messages.locale)} / ${credits.limit.toLocaleString(messages.locale)} ${credits.unit}`;
+    meter.append(amount);
+  }
   if (reset) meter.append(reset.timestamp);
   return meter;
 }
@@ -260,7 +356,7 @@ export function renderAccountUsage(
 } {
   if (state?.status !== "ready") {
     const cell = document.createElement("td");
-    cell.colSpan = 2;
+    cell.colSpan = 1;
     cell.className = "settings-account-usage-cell settings-account-usage-cell--message";
     const usage = document.createElement("div");
     usage.className = "settings-account-usage";
@@ -288,35 +384,48 @@ export function renderAccountUsage(
     return { cells: [cell], continuationCells: [], additional: null };
   }
   const { rows, additional } = splitUsageWindows(state.credits, messages, filter);
-  const renderCells = (row: AccountUsageRow): HTMLTableCellElement[] =>
-    (["five_hour", "seven_day"] as const).map((period) => {
-      const cell = document.createElement("td");
-      cell.className = "settings-account-usage-cell";
+  const cell = document.createElement("td");
+  cell.className = "settings-account-usage-cell";
+  const grid = document.createElement("div");
+  grid.className = "settings-account-quota-grid";
+  let rowIndex = 1;
+  for (const row of rows) {
+    let placed = false;
+    const present = (["five_hour", "seven_day"] as const).filter((period) => row.columns[period]);
+    for (const period of present) {
       const window = row.columns[period];
-      if (window) cell.append(renderUsageWindow(document, window, messages, display));
-      else {
-        const missing = document.createElement("div");
-        missing.className = "settings-account-usage__missing";
-        const label = document.createElement("span");
-        label.className = "settings-account-usage__title";
-        label.textContent = row.scope ?? creditsPeriodLabel(period, messages);
-        const dash = document.createElement("span");
-        dash.textContent = "—";
-        dash.setAttribute("aria-hidden", "true");
-        missing.append(label, dash);
-        cell.append(missing);
-      }
-      return cell;
-    });
-  const [firstRow = { columns: {} }, ...continuations] = rows;
-  const cells = renderCells(firstRow);
-  const continuationCells = continuations.map(renderCells);
-  if (!additional.length) return { cells, continuationCells, additional: null };
-  const extra = document.createElement("div");
-  extra.className = "settings-account-extra-usage";
-  for (const window of additional)
-    extra.append(renderUsageWindow(document, window, messages, display));
-  return { cells, continuationCells, additional: extra };
+      if (!window) continue;
+      const periodLabel = creditsPeriodLabel(period, messages);
+      const scope = row.scope;
+      const scoped = Boolean(window.scoped && scope);
+      const meter = renderUsageWindow(
+        document,
+        {
+          ...window,
+          label: scoped && scope ? `${scope} · ${periodLabel}` : window.label,
+          ...(scoped && scope ? { titlePeriod: periodLabel, titleScope: scope } : {}),
+        },
+        messages,
+        display,
+      );
+      // A window with no 5-hour partner fills the quota column instead of sitting in the right half.
+      placeUsageMeter(
+        meter,
+        present.length === 1 ? "span" : period === "five_hour" ? 1 : 2,
+        rowIndex,
+      );
+      grid.append(meter);
+      placed = true;
+    }
+    if (placed) rowIndex += 1;
+  }
+  for (const [index, window] of additional.entries()) {
+    const meter = renderUsageWindow(document, window, messages, display);
+    placeUsageMeter(meter, index % 2 === 0 ? 1 : 2, rowIndex + Math.floor(index / 2));
+    grid.append(meter);
+  }
+  cell.append(grid);
+  return { cells: [cell], continuationCells: [], additional: null };
 }
 
 export function renderAccountResetCredits(

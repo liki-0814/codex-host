@@ -18,6 +18,9 @@ import Info from "lucide/dist/esm/icons/info.mjs";
 import Languages from "lucide/dist/esm/icons/languages.mjs";
 import Network from "lucide/dist/esm/icons/network.mjs";
 import PlugZap from "lucide/dist/esm/icons/plug-zap.mjs";
+import Puzzle from "lucide/dist/esm/icons/puzzle.mjs";
+import Link from "lucide/dist/esm/icons/link.mjs";
+import Unlink from "lucide/dist/esm/icons/unlink.mjs";
 import RefreshCw from "lucide/dist/esm/icons/refresh-cw.mjs";
 import RotateCcw from "lucide/dist/esm/icons/rotate-ccw.mjs";
 import Route from "lucide/dist/esm/icons/route.mjs";
@@ -33,7 +36,6 @@ import CircleHelp from "lucide/dist/esm/icons/circle-question-mark.mjs";
 import X from "lucide/dist/esm/icons/x.mjs";
 import Users from "lucide/dist/esm/icons/users.mjs";
 import Plus from "lucide/dist/esm/icons/plus.mjs";
-import codexhostLogoUrl from "../assets/codexhost-app-icon.svg";
 
 export const RENDERER_SETTINGS_ICON_NAMES = [
   "settings",
@@ -71,6 +73,9 @@ export const RENDERER_SETTINGS_ICON_NAMES = [
   "search",
   "help",
   "ellipsis",
+  "skills",
+  "link",
+  "unlink",
 ] as const;
 
 export type RendererSettingsIconName = (typeof RENDERER_SETTINGS_ICON_NAMES)[number];
@@ -120,6 +125,9 @@ const iconNodes = {
   search: Search,
   help: CircleHelp,
   ellipsis: Ellipsis,
+  skills: Puzzle,
+  link: Link,
+  unlink: Unlink,
 } satisfies Record<RendererSettingsIconName, IconNode>;
 
 export function isRendererSettingsIconName(value: string): value is RendererSettingsIconName {
@@ -137,17 +145,68 @@ export function createRendererSettingsIcon(name: RendererSettingsIconName, size 
   return icon;
 }
 
-export function createRendererSettingsBrandIcon(size = 22): HTMLImageElement {
-  const icon = document.createElement("img");
-  icon.src = codexhostLogoUrl;
-  icon.alt = "";
-  icon.width = size;
-  icon.height = size;
-  icon.draggable = false;
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+// 20px rail slot. The resting mark is a stroked C; selection swaps in the filled mark.
+const CODEXHOST_LINE_RING = "M 15.67 5.57 A 7.2 7.2 0 1 0 15.67 14.43";
+const CODEXHOST_SOLID_RING =
+  "M 16.30 5.07 A 8 8 0 1 0 16.30 14.93 L 15.04 13.94 A 6.4 6.4 0 1 1 15.04 6.06 Z";
+
+export function createRendererSettingsBrandIcon(size = 22): SVGSVGElement {
+  const icon = document.createElementNS(SVG_NS, "svg");
+  icon.setAttribute("viewBox", "0 0 20 20");
+  icon.setAttribute("fill", "none");
   icon.setAttribute("aria-hidden", "true");
+  icon.setAttribute("focusable", "false");
   icon.style.width = `${size}px`;
   icon.style.height = `${size}px`;
-  icon.style.objectFit = "contain";
+  icon.style.display = "block";
   icon.classList.add("codexhost-settings-icon");
+
+  const line = document.createElementNS(SVG_NS, "g");
+  line.setAttribute("data-codexhost-mark", "line");
+  const lineRing = document.createElementNS(SVG_NS, "path");
+  lineRing.setAttribute("d", CODEXHOST_LINE_RING);
+  lineRing.setAttribute("fill", "none");
+  lineRing.setAttribute("stroke", "currentColor");
+  lineRing.setAttribute("stroke-width", "1.6");
+  lineRing.setAttribute("stroke-linecap", "round");
+  const lineSquare = document.createElementNS(SVG_NS, "rect");
+  lineSquare.setAttribute("x", "7.8");
+  lineSquare.setAttribute("y", "7.8");
+  lineSquare.setAttribute("width", "4.4");
+  lineSquare.setAttribute("height", "4.4");
+  lineSquare.setAttribute("rx", "1");
+  lineSquare.setAttribute("fill", "none");
+  lineSquare.setAttribute("stroke", "currentColor");
+  lineSquare.setAttribute("stroke-width", "1.6");
+  line.append(lineRing, lineSquare);
+
+  const solid = document.createElementNS(SVG_NS, "g");
+  solid.setAttribute("data-codexhost-mark", "solid");
+  solid.style.display = "none";
+  const solidRing = document.createElementNS(SVG_NS, "path");
+  solidRing.setAttribute("d", CODEXHOST_SOLID_RING);
+  solidRing.setAttribute("fill", "currentColor");
+  solidRing.setAttribute("stroke", "none");
+  const solidSquare = document.createElementNS(SVG_NS, "rect");
+  solidSquare.setAttribute("x", "7");
+  solidSquare.setAttribute("y", "7");
+  solidSquare.setAttribute("width", "6");
+  solidSquare.setAttribute("height", "6");
+  solidSquare.setAttribute("rx", "1.4");
+  solidSquare.setAttribute("fill", "currentColor");
+  solidSquare.setAttribute("stroke", "none");
+  solid.append(solidRing, solidSquare);
+
+  icon.append(line, solid);
   return icon;
+}
+
+export function setRendererSettingsBrandIconSelected(icon: Element, selected: boolean): void {
+  if (typeof icon.querySelector !== "function") return;
+  const line = icon.querySelector('[data-codexhost-mark="line"]');
+  const solid = icon.querySelector('[data-codexhost-mark="solid"]');
+  if (line && "style" in line) (line as HTMLElement).style.display = selected ? "none" : "";
+  if (solid && "style" in solid) (solid as HTMLElement).style.display = selected ? "" : "none";
 }

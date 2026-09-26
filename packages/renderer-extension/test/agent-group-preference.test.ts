@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AGENT_GROUP_PREFERENCE_STORAGE_KEY,
   createAgentGroupPreferenceStore,
+  mainConnectionAgentOrder,
 } from "../src/agent-group-preference.js";
 
 function memoryStorage(): Storage {
@@ -59,5 +60,14 @@ describe("Agent grouping defaults", () => {
     expect(store.sectionOf("pi", true)).toBe("main");
     expect(store.sectionOf("grok")).toBe("more");
     expect(store.sectionOf("omp", true)).toBe("more");
+  });
+
+  it("keeps only the Connections main list, in that order", () => {
+    const store = createAgentGroupPreferenceStore(memoryStorage());
+    store.moveAgent("kimi-code", "main", "pi");
+    store.moveAgent("cursor-cli", "more");
+    const order = mainConnectionAgentOrder(store);
+    expect(order.indexOf("kimi-code")).toBeLessThan(order.indexOf("pi"));
+    expect(order).not.toContain("cursor-cli");
   });
 });

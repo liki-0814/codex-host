@@ -22,7 +22,11 @@ class FakeHeaderElement {
   readonly attributes = new Map<string, string>();
   readonly children: FakeHeaderElement[] = [];
   readonly listeners = new Map<string, (event: { stopPropagation(): void }) => void>();
-  readonly classList = { add: vi.fn() };
+  className = "";
+  readonly classList = {
+    add: vi.fn(),
+    contains: (name: string): boolean => this.className.split(/\s+/u).includes(name),
+  };
   readonly style: Record<string, string | ((name: string, value: string) => void)> = {};
   disabled = false;
   isConnected = true;
@@ -55,6 +59,9 @@ class FakeHeaderElement {
   }
   appendChild(child: FakeHeaderElement): FakeHeaderElement {
     return this.insertBefore(child, null);
+  }
+  getAttribute(name: string): string | null {
+    return this.attributes.has(name) ? (this.attributes.get(name) ?? "") : null;
   }
   getBoundingClientRect(): DOMRect {
     return {
@@ -216,6 +223,9 @@ describe("Renderer settings header trigger", () => {
       dispatch(name: string): void {
         this.listeners.get(name)?.({ stopPropagation: vi.fn() });
       }
+      getAttribute(name: string): string | null {
+        return this.attributes.has(name) ? (this.attributes.get(name) ?? "") : null;
+      }
       hasAttribute(name: string): boolean {
         return this.attributes.has(name);
       }
@@ -247,6 +257,14 @@ describe("Renderer settings header trigger", () => {
       document,
     );
 
+    expect(control.button.title).toBe("CodexHost");
+    expect(control.button.children).toHaveLength(1);
+    const brandIcon = control.button.children[0] as unknown as FakeElement;
+    expect(brandIcon.attributes.get("viewBox")).toBe("0 0 20 20");
+    expect(brandIcon.attributes.get("fill")).toBe("none");
+    expect(control.button.getAttribute("aria-expanded")).toBe("false");
+    expect(control.button.style.width).toBe("28px");
+    expect(control.button.style.padding).toBe("0");
     expect(control.updateButton.style.display).toBe("none");
     control.setUpdateAvailable(true);
     expect(control.updateButton.style.display).toBe("inline-flex");
@@ -261,6 +279,60 @@ describe("Renderer settings header trigger", () => {
     expect(control.updateButton.style.display).toBe("none");
     control.dispose();
     vi.unstubAllGlobals();
+  });
+
+  it("mounts an icon directly under the plugin destination in the navigation rail", () => {
+    const shell = createFakeHeader({ nativeActions: true });
+    const rail = new FakeHeaderElement(0, 52);
+    rail.setAttribute("data-app-navigation-rail", "true");
+    const column = new FakeHeaderElement(6, 40);
+    column.className = "flex flex-col gap-2";
+    const plugin = new FakeHeaderElement(8, 36);
+    plugin.setAttribute("data-sidebar-destination", "builtin:customize");
+    const more = new FakeHeaderElement(8, 36);
+    more.setAttribute("data-slot", "popover-trigger");
+    column.append(plugin, more);
+    rail.append(column);
+    const document = {
+      createElement: () => new FakeHeaderElement(),
+      createElementNS: () => new FakeHeaderElement(),
+      querySelector: (selector: string) => {
+        if (selector === '[data-app-navigation-rail="true"]') return rail;
+        if (selector === 'header[data-pip-obstacle="app-shell-header"]') return shell.header;
+        return null;
+      },
+      querySelectorAll: () => [],
+    } as unknown as Document;
+    vi.stubGlobal("document", document);
+
+    try {
+      const control = installRendererSettingsHeaderTrigger({
+        available: true,
+        onOpen: vi.fn(),
+        ownerDocument: document,
+      });
+
+      expect(column.children).toEqual([plugin, control.root, more]);
+      expect(control.refresh()).toBe(true);
+      expect(column.children).toEqual([plugin, control.root, more]);
+      const button = (control.root as unknown as FakeHeaderElement).children[0];
+      expect(button?.style.width).toBe("36px");
+      expect(button?.style.color).toBe("color-mix(in srgb, currentColor 49.4%, transparent)");
+      const brandIcon = button?.children[0];
+      expect(brandIcon?.querySelector('[data-codexhost-mark="line"]')?.style.display).toBe("");
+      expect(brandIcon?.querySelector('[data-codexhost-mark="solid"]')?.style.display).toBe("none");
+      control.setSelected(true);
+      expect(button?.getAttribute("aria-expanded")).toBe("true");
+      expect(button?.style.color).toBe("inherit");
+      expect(brandIcon?.querySelector('[data-codexhost-mark="line"]')?.style.display).toBe("none");
+      expect(brandIcon?.querySelector('[data-codexhost-mark="solid"]')?.style.display).toBe("");
+      control.setSelected(false);
+      expect(button?.style.color).toBe("color-mix(in srgb, currentColor 49.4%, transparent)");
+      expect(shell.surface.children).toEqual([shell.pageHeader, shell.actionGroup]);
+      control.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("mounts directly before the native header action group", () => {

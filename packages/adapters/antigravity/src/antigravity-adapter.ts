@@ -87,7 +87,11 @@ import {
   requestAntigravityTrajectorySteps,
   type AntigravityCodeAction,
 } from "./code-action-diff.js";
-import { fetchAntigravityQuota, type AntigravityQuotaSnapshot } from "./quota.js";
+import {
+  antigravityAccountIdentityLabel,
+  fetchAntigravityQuota,
+  type AntigravityQuotaSnapshot,
+} from "./quota.js";
 import { AntigravityQuestionBridge } from "./question-bridge.js";
 import { AntigravitySubagents } from "./subagents.js";
 import { nativeSubagentIdSchema, readSubagentTranscript } from "./subagent-transcript.js";
@@ -1534,6 +1538,7 @@ export class AntigravityAdapter implements HarnessAdapter {
     const snapshot = await this.refreshCredits();
     if (!snapshot) return null;
     return {
+      label: antigravityAccountIdentityLabel(snapshot.label),
       credits: {
         label: snapshot.label,
         usedPercent: snapshot.usedPercent,

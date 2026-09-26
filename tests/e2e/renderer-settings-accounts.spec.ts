@@ -114,18 +114,8 @@ test("shows detected Harness quota read-only and removes rows when authenticatio
   await expect(
     section.locator('[data-harness-id="grok"] .settings-account-person-cell'),
   ).toHaveAttribute("title", /登录、退出和切换请在其原生客户端中完成/);
-  // The last column holds only Harness target marks: no per-row refresh or native-management text.
-  await expect(section.getByText("原生管理")).toHaveCount(0);
-  await expect(section.getByRole("button", { name: "刷新额度" })).toHaveCount(0);
-  // Only logins with a verified-compatible target get the small Pi mark; every other row has none.
-  await expect(
-    section.locator('[data-harness-id="grok"] .settings-account-harness-target'),
-  ).toBeEnabled();
-  await expect(
-    section.locator(
-      '[data-harness-id="claude-code"] .settings-account-harness-target, [data-harness-id="antigravity"] .settings-account-harness-target',
-    ),
-  ).toHaveCount(0);
+  await expect(section.getByText("原生管理")).toHaveCount(3);
+  await expect(section.locator(".settings-account-harness-target")).toHaveCount(0);
   await page.evaluate(() => Reflect.get(globalThis, "accountsFixture").clearHarnessAccounts());
   await page.locator(".settings-account-toolbar").getByRole("button", { name: "刷新额度" }).click();
   await expect(nativeAccounts).toHaveCount(0);
@@ -136,12 +126,8 @@ test("shows current Codex quota, reset-credit count, and no Host consume or logi
   page,
 }) => {
   await setup(page);
-  await expect(page.locator(".settings-account-table th")).toHaveText([
-    "账号",
-    "5 小时剩余",
-    "7 天剩余",
-    "用于 Harness",
-  ]);
+  await expect(page.locator(".settings-account-table th")).toHaveText(["账号", "剩余", "管理"]);
+  await expect(page.locator(`${nativeRow} .settings-account-action`)).toHaveText("刷新额度");
   await expect(page.locator(`${nativeRow} .settings-account-active`)).toHaveText("当前");
   await expect(page.locator(`${nativeRow} .settings-account-plan`)).toHaveText("Pro 20x");
   await expect(page.locator(`${nativeRow} .settings-account-reset-summary`)).toContainText("2 张");
@@ -153,81 +139,11 @@ test("shows current Codex quota, reset-credit count, and no Host consume or logi
   await expect(page.getByRole("button", { name: "使用重置", exact: true })).toHaveCount(0);
 });
 
-test("confirms imports and lists the copy in a dedicated Pi section, including a narrow window", async ({
-  page,
-}) => {
+test("does not repeat Pi's own logins under the account table", async ({ page }) => {
   await setup(page, { scenario: "external" });
-  await page.setViewportSize({ width: 700, height: 900 });
-  const mark = page.locator(`${nativeRow} .settings-account-harness-target`);
-  const box = await mark.boundingBox();
-  expect(box?.width ?? 99).toBeLessThanOrEqual(28);
-  const pi = page.getByRole("region", { name: "Pi 中的账号" });
-  // Logins Pi already had sit behind a disclosure that starts collapsed.
-  const group = pi.locator(".settings-pi-accounts__others");
-  const toggle = pi.getByRole("button", { name: /Pi 自有配置/ });
-  await expect(group).toBeHidden();
-  await expect(toggle).toHaveAttribute("aria-expanded", "false");
-  await toggle.click();
-  await expect(group).toBeVisible();
-  const others = group.locator(".settings-pi-accounts__row--other");
-  await expect(others).toHaveCount(3);
-  await expect(others.nth(0)).toContainText("anthropic");
-  await expect(others.nth(1)).toContainText("same@example.com");
-  await expect(others.nth(1)).toContainText("codex1");
-  // A recognized OAuth vendor carries the same mark the account table uses for that credential.
-  await expect(others.nth(1).locator('[data-agent="codex"]')).toHaveCount(1);
-  await expect(others.nth(0).locator(".settings-pi-accounts__other-mark")).toHaveCount(1);
-  await expect(others.nth(2)).toContainText("API Key");
-  await expect(others.getByRole("button")).toHaveCount(0);
-  await mark.click();
-  const dialog = page.getByRole("dialog", { name: "导入到 Pi", exact: true });
-  await expect(dialog).toContainText("保留全部已有 Provider 配置");
-  await expect(dialog.getByLabel("模型入口名称")).toHaveValue("codex");
-  expect(
-    await page.evaluate(
-      () =>
-        Reflect.get(globalThis, "accountsFixture").calls.imports.filter(
-          (r: { action: string }) => r.action === "import",
-        ).length,
-    ),
-  ).toBe(0);
-  await dialog.getByRole("button", { name: "确认导入", exact: true }).click();
-  const done = page.getByRole("dialog", { name: "已复制到 Pi", exact: true });
-  await expect(done).toContainText("复制不代表已验证模型调用");
-  await done.getByRole("button", { name: "完成", exact: true }).click();
-  await expect(done).toHaveCount(0);
-  await expect(mark).toHaveAttribute("data-state", "imported");
-  await expect(mark).toHaveAttribute("title", /已复制/);
-  await expect(pi).toContainText("zhaobin_jiang@163.com");
-  await expect(pi).toContainText("codex/…");
-  await expect(pi).toContainText("已复制");
-
-  await pi.getByRole("button", { name: /重新导入凭证/ }).click();
-  const reimport = page.getByRole("dialog", { name: "重新导入凭证", exact: true });
-  await expect(reimport).toContainText("使用同一来源账号更新 codex/…");
-  await reimport.getByRole("button", { name: "确认导入", exact: true }).click();
-  await page
-    .getByRole("dialog", { name: "已复制到 Pi", exact: true })
-    .getByRole("button", { name: "完成", exact: true })
-    .click();
-  expect(
-    await page.evaluate(() =>
-      Reflect.get(globalThis, "accountsFixture").calls.imports.some(
-        (r: { action: string }) => r.action === "reimport",
-      ),
-    ),
-  ).toBe(true);
+  await expect(page.getByRole("region", { name: "Pi 中的账号" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Pi 自有配置/ })).toHaveCount(0);
   await expect(page.locator(`${nativeRow} .settings-account-active`)).toHaveText("当前");
-
-  await pi.getByRole("button", { name: /从 Pi 移除/ }).click();
-  const removal = page.getByRole("dialog", { name: "从 Pi 移除", exact: true });
-  await removal.getByRole("button", { name: "取消", exact: true }).click();
-  await expect(pi).toContainText("codex/…");
-  await pi.getByRole("button", { name: /从 Pi 移除/ }).click();
-  await removal.getByRole("button", { name: "从 Pi 移除", exact: true }).click();
-  await expect(page.locator(".settings-credential-dialog[open]")).toHaveCount(0);
-  await expect(others).toHaveCount(3);
-  await expect(mark).not.toHaveAttribute("data-state", /.+/);
 });
 
 test("updates compact countdowns without requests or inventing a reset", async ({ page }) => {

@@ -102,11 +102,8 @@ describe("Account limit windows", () => {
     );
     if (!result) throw new Error("Expected limits");
     expect(text(result)).toContain("7 天");
-    expect(text(result)).toContain("—");
-    expect(text(result)).not.toContain("未提供此窗口");
-    expect(
-      elements(result).filter((el) => el.className === "settings-account-usage__missing"),
-    ).toHaveLength(1);
+    expect(text(result)).not.toContain("5 小时");
+    expect(text(result)).not.toContain("—");
     expect(elements(result).filter((el) => el.attributes.get("role") === "meter")).toHaveLength(1);
   });
 
@@ -186,44 +183,146 @@ describe("Account limit windows", () => {
   });
 });
 
-describe("Quota comparison columns", () => {
-  function columns(credits: AccountCreditsSnapshot) {
-    const result = renderUsage(
+describe("Quota grid", () => {
+  function grid(snapshot: AccountCreditsSnapshot) {
+    return renderUsage(
       document,
-      { status: "ready", credits, freshness: "live", observedAt: null },
+      { status: "ready", credits: snapshot, freshness: "live", observedAt: null },
       messages,
       "remaining",
       vi.fn(),
     );
-    const [fiveHour, sevenDay] = result.cells;
-    if (!fiveHour || !sevenDay) throw new Error("Expected two comparison columns");
-    return { ...result, cells: [fiveHour, sevenDay] as const };
   }
 
-  it("places weekly zero usage only in the 7-day column", () => {
-    const result = columns({ usedPercent: 0, periodType: "weekly" });
-    expect(elements(result.cells[0]).some((el) => el.attributes.get("role") === "meter")).toBe(
-      false,
-    );
+  function quotaCell(snapshot: AccountCreditsSnapshot): HTMLElement {
+    const cell = grid(snapshot).cells[0];
+    if (!cell) throw new Error("Expected the quota cell");
+    return cell;
+  }
+
+  it("places weekly zero usage in the single quota cell", () => {
+    const result = grid({ usedPercent: 0, periodType: "weekly" });
+    expect(result.cells).toHaveLength(1);
     expect(
-      elements(result.cells[1])
+      elements(quotaCell({ usedPercent: 0, periodType: "weekly" }))
         .find((el) => el.attributes.get("role") === "meter")
         ?.attributes.get("aria-valuenow"),
     ).toBe("100");
     expect(result.additional).toBeNull();
+    expect(
+      elements(quotaCell({ usedPercent: 0, periodType: "weekly" })).find((element) =>
+        element.className.includes("settings-account-usage__meter"),
+      )?.style.gridColumn,
+    ).toBe("1 / -1");
   });
 
-  it("places the exact secondary window in its column without merging duplicate reports", () => {
-    const result = columns({
+  it("keeps duplicate windows in the same cell", () => {
+    const snapshot = {
       ...credits,
       productUsage: [
         { product: "7-day window", usagePercent: 20 },
         { product: "7-day window", usagePercent: 35 },
       ],
+    };
+    const rendered = text(quotaCell(snapshot));
+    expect(rendered).toContain("9%");
+    expect(rendered).toContain("80%");
+    expect(rendered).toContain("65%");
+    expect(grid(snapshot).additional).toBeNull();
+  });
+
+  it("prints the provider amount under the meter", () => {
+    expect(text(quotaCell({ ...credits, used: 91, limit: 100, unit: "credits" }))).toContain(
+      "9 / 100 credits",
+    );
+  });
+
+  function meters(root: HTMLElement): FakeElement[] {
+    const grid = elements(root).find((el) => el.className === "settings-account-quota-grid");
+    return (grid?.children ?? []).filter(
+      (child): child is FakeElement => child instanceof FakeElement,
+    );
+  }
+
+  it("keeps the 5-hour window in the left column beside a weekly limit", () => {
+    const cell = quotaCell({
+      usedPercent: 4,
+      periodType: "weekly",
+      productUsage: [{ product: "Kimi Code · 5-hour window", usagePercent: 12 }],
     });
-    expect(text(result.cells[0])).toContain("9%");
-    expect(text(result.cells[1])).toContain("80%");
-    expect(result.additional && text(result.additional)).toContain("65%");
+    const placed = meters(cell);
+    expect(placed.map((meter) => meter.style.gridColumn)).toEqual(["1", "2"]);
+    expect(placed.map((meter) => meter.style.gridRow)).toEqual(["1", "1"]);
+    expect(
+      elements(placed[0] ?? cell)
+        .find((el) => el.attributes.get("role") === "meter")
+        ?.attributes.get("aria-label"),
+    ).toContain("5 小时");
+    expect(text(placed[1] ?? cell)).toContain("周额度");
+    expect(text(placed[0] ?? cell)).not.toContain("周额度");
+  });
+
+  it("places each model group's 5-hour window on the left of its 7-day window", () => {
+    const placed = meters(
+      quotaCell({
+        label: "Gemini Models · 5-hour window",
+        usedPercent: 1,
+        periodType: "five_hour",
+        productUsage: [
+          { product: "Gemini Models · 7-day window", usagePercent: 2 },
+          { product: "Claude and GPT models · 5-hour window", usagePercent: 3 },
+          { product: "Claude and GPT models · 7-day window", usagePercent: 4 },
+        ],
+      }),
+    );
+    expect(placed.map((meter) => `${meter.style.gridRow}:${meter.style.gridColumn}`)).toEqual([
+      "1:1",
+      "1:2",
+      "2:1",
+      "2:2",
+    ]);
+    const claude = placed[2];
+    if (!claude) throw new Error("Expected the Claude 5-hour meter");
+    expect(
+      elements(claude).some(
+        (el) => el.className === "settings-account-usage__period" && el.textContent === "5 小时",
+      ),
+    ).toBe(true);
+    expect(
+      elements(claude).some(
+        (el) =>
+          el.className === "settings-account-usage__scope" &&
+          el.textContent === "Claude and GPT models",
+      ),
+    ).toBe(true);
+  });
+
+  it("shows an empty plan cap as zero instead of a full remaining bar", () => {
+    const cell = quotaCell({
+      label: "Plan credits",
+      usedPercent: 0,
+      periodType: "unknown",
+      used: 0,
+      limit: 0,
+      unit: "credits",
+      productUsage: [
+        {
+          product: "Shared resource credits",
+          usagePercent: 1,
+          used: 3,
+          limit: 26000,
+          unit: "credits",
+        },
+      ],
+    });
+    const placed = meters(cell);
+    expect(placed.map((meter) => meter.style.gridColumn)).toEqual(["1", "2"]);
+    expect(text(placed[0] ?? cell)).toContain("套餐 Credits");
+    expect(text(placed[0] ?? cell)).toContain("0 / 0 credits");
+    expect(text(placed[0] ?? cell)).toContain("—");
+    expect(text(placed[0] ?? cell)).not.toContain("100%");
+    expect(text(placed[1] ?? cell)).toContain("25,997 / 26,000 credits");
+    expect(text(placed[1] ?? cell)).toContain("99%");
   });
 });
 

@@ -6,10 +6,6 @@ import type {
   CodexAccountUsageResult,
 } from "@codexhost/shared-contracts";
 
-import {
-  mountCredentialImports,
-  type RendererCredentialImportClient,
-} from "./credential-imports.js";
 import { codexAccountDisplayName } from "../renderer-codex-account-options.js";
 import {
   accountListFocusRestorer,
@@ -25,9 +21,12 @@ import type { RendererSettingsPageDefinition, RendererSettingsPageMountContext }
 import { createRendererSettingsIcon } from "./icons.js";
 import type { RendererSettingsMessages } from "./localization.js";
 import { shouldApplyCodexAccountSnapshot } from "../renderer-codex-account-state.js";
+import {
+  getSharedAgentGroupPreferenceStore,
+  mainConnectionAgentOrder,
+} from "../agent-group-preference.js";
 
-export interface RendererCodexAccountClient
-  extends RendererHarnessAccountClient, RendererCredentialImportClient {
+export interface RendererCodexAccountClient extends RendererHarnessAccountClient {
   listCodexAccounts(): Promise<CodexAccountListResult>;
   refreshCodexAccounts?(): Promise<CodexAccountListResult>;
   inspectCodexAccountUsage?(input: CodexAccountUsageParams): Promise<CodexAccountUsageResult>;
@@ -103,7 +102,6 @@ export function createAccountsSettingsPage(
         usageByAccountId.clear();
         loadUsage(accounts);
         void harnessAccounts?.refresh(true);
-        void credentialImports.refresh();
       });
       search.addEventListener("input", () => render());
       toolbar.append(connected, searchWrapper, displayControls, refreshUsage);
@@ -111,14 +109,7 @@ export function createAccountsSettingsPage(
       list.className = "settings-account-list";
       const { table, body, updateDisplay } = createAccountsTable(document, messages);
       list.append(table);
-      const credentialImports = mountCredentialImports(
-        context.content,
-        context.signal,
-        getClient,
-        messages.credentialImports,
-        () => render(),
-      );
-      context.content.append(header, status, toolbar, list, credentialImports.section);
+      context.content.append(header, status, toolbar, list);
       const stopCountdowns = mountAccountResetCountdowns(list, messages, context.signal);
 
       let accounts: readonly CodexAccountSummary[] = [];
@@ -137,7 +128,14 @@ export function createAccountsSettingsPage(
         body.replaceChildren();
         status.replaceChildren();
         if (loadMessage) status.append(loadMessage);
-        connectedCount.textContent = String(accounts.length + harnessAccounts.accounts.length);
+        const connectionOrder = mainConnectionAgentOrder(getSharedAgentGroupPreferenceStore());
+        const connectionRank = new Map<string, number>(
+          connectionOrder.map((agent, index) => [agent, index]),
+        );
+        const shownHarnessCount = harnessAccounts.accounts.filter((account) =>
+          connectionRank.has(account.harnessId),
+        ).length;
+        connectedCount.textContent = String(accounts.length + shownHarnessCount);
         updateDisplay(usageDisplay);
         for (const [display, button] of displayButtons) {
           button.setAttribute("aria-pressed", String(display === usageDisplay));
@@ -153,15 +151,21 @@ export function createAccountsSettingsPage(
             .toLocaleLowerCase()
             .includes(query),
         );
-        const visibleHarnessAccounts = harnessAccounts.accounts.filter((account) =>
-          `${account.harnessName} ${account.email ?? ""} ${account.label ?? ""} ${account.plan ?? ""}`
-            .toLocaleLowerCase()
-            .includes(query),
-        );
+        const visibleHarnessAccounts = harnessAccounts.accounts
+          .filter((account) => connectionRank.has(account.harnessId))
+          .filter((account) =>
+            `${account.harnessName} ${account.email ?? ""} ${account.label ?? ""} ${account.plan ?? ""}`
+              .toLocaleLowerCase()
+              .includes(query),
+          )
+          .sort(
+            (left, right) =>
+              (connectionRank.get(left.harnessId) ?? 0) - (connectionRank.get(right.harnessId) ?? 0),
+          );
         if (visibleAccounts.length + visibleHarnessAccounts.length === 0) {
           const emptyRow = document.createElement("tr");
           const emptyCell = document.createElement("td");
-          emptyCell.colSpan = 4;
+          emptyCell.colSpan = 3;
           emptyCell.className = "settings-account-empty";
           emptyCell.textContent = query ? messages.accountNoMatches : messages.accountEmpty;
           emptyRow.append(emptyCell);
@@ -171,10 +175,6 @@ export function createAccountsSettingsPage(
           body.append(
             ...renderAccountRows(document, account, messages, {
               current: accountPhase === "ready" && account.accountId === currentAccountId,
-              importAction: credentialImports.button(
-                "codex",
-                codexAccountDisplayName(account).full,
-              ),
               usage: usageByAccountId.get(account.accountId),
               display: usageDisplay,
               resetExpanded: expandedResetAccounts.has(account.accountId),
@@ -191,16 +191,7 @@ export function createAccountsSettingsPage(
         }
         for (const account of visibleHarnessAccounts) {
           body.append(
-            ...renderHarnessAccountRows(
-              document,
-              account,
-              messages,
-              usageDisplay,
-              credentialImports.button(
-                account.harnessId,
-                account.email ?? account.label ?? account.harnessName,
-              ),
-            ),
+            ...renderHarnessAccountRows(document, account, messages, usageDisplay),
           );
         }
         restoreFocus();
@@ -316,12 +307,13 @@ export function createAccountsSettingsPage(
         // The page remains usable through list and refresh.
       }
       const harnessAccounts = createHarnessAccounts(context.signal, getClient, render);
-      void credentialImports.refresh();
+      const unsubscribeConnectionOrder = getSharedAgentGroupPreferenceStore().subscribe(render);
       void harnessAccounts.refresh();
       load();
       return () => {
         stopCountdowns();
         unsubscribeAccounts?.();
+        unsubscribeConnectionOrder();
       };
     },
   });

@@ -4,11 +4,18 @@
 Define the browser-safe, window-scoped codexhost settings shell, validated page extension contract, application-header trigger, lifecycle isolation, responsive presentation, and honest unavailable-state boundary for future runtime settings.
 ## Requirements
 ### Requirement: Codex Renderer exposes one codexhost settings shell
-The Renderer Extension SHALL install one window-scoped codexhost settings shell and one owned settings trigger as the first control in the verified Codex application-header right-side action group. The trigger SHALL mount immediately before that native action group so native header controls keep their own positions and owned controls extend away from them. The trigger SHALL remain present when the header renders no native action group for a blank Thread, mounting in the structurally verified right-side action position instead. The shell and trigger SHALL remain independent of Composer, Thread, Harness, Model, Thinking, and submission state.
+The Renderer Extension SHALL install one window-scoped codexhost settings shell and one owned icon-only settings trigger. When the left navigation rail shows the plugin destination, the trigger SHALL mount immediately under that icon and above the rail's following overflow control. Its tooltip SHALL read CodexHost. When that rail destination is absent, the trigger SHALL mount immediately before the verified Codex application-header right-side action group so native header controls keep their own positions. The trigger SHALL remain present when the header renders no native action group for a blank Thread, mounting in the structurally verified right-side action position instead. The shell and trigger SHALL remain independent of Composer, Thread, Harness, Model, Thinking, and submission state.
+
+#### Scenario: User opens settings from the navigation rail
+- **WHEN** the left navigation rail shows the plugin destination
+- **THEN** the settings trigger SHALL be an icon-only button directly under that destination
+- **AND** hovering it SHALL show the tooltip CodexHost
+- **AND** the mark SHALL be a line icon in the rail's idle color until settings is open, when it SHALL become the only selected rail mark
+- **AND** the previously selected native rail destination and current page marker SHALL not remain selected while settings is open
 
 #### Scenario: User opens settings from the application header
-- **WHEN** the user activates the owned codexhost icon in the Codex application header
-- **THEN** the window-scoped settings dialog SHALL open on its default Connections page
+- **WHEN** the navigation rail has no plugin destination and the user activates the owned codexhost icon in the Codex application header
+- **THEN** the window-scoped settings page SHALL open on its default Connections page beside the navigation rail, without a modal backdrop
 - **AND** Agent, Model, Composer phase, and native create state SHALL remain unchanged
 
 #### Scenario: Blank Thread has no native header actions
@@ -19,7 +26,7 @@ The Renderer Extension SHALL install one window-scoped codexhost settings shell 
 #### Scenario: Codex replaces the application header
 - **WHEN** Renderer mutation scanning observes that the mounted header trigger is disconnected
 - **THEN** Renderer SHALL mount one replacement trigger immediately before the native action group of the next verified header
-- **AND** it SHALL NOT create a second dialog, trigger, or configuration state store
+- **AND** it SHALL NOT create a second settings page, trigger, or configuration state store
 
 #### Scenario: Another extension mounts its own header control
 - **WHEN** a control that Renderer does not own is inserted between the owned trigger and the start of the header action area
@@ -48,18 +55,18 @@ The settings shell SHALL consume an immutable ordered registry of cohesive page 
 - **THEN** registry construction SHALL fail before the settings trigger becomes interactive
 
 ### Requirement: Settings shell owns responsive and isolated presentation
-The settings shell SHALL render inside an owned Shadow Root with owned CSS and bundled browser-safe icons. It SHALL provide a constrained desktop dialog, a narrow-window layout, stable navigation dimensions, scrollable page content, owned light/dark palettes, and forced-colors system fallbacks without relying on Codex private React components, color variables, utility classes, or DOM styling. Its desktop visual structure SHALL align with the reviewed Codex settings baseline through a 240px navigation rail, centered bounded content column, neutral navigation states, and grouped settings rows while retaining owned implementation and palettes.
+The settings shell SHALL render inside an owned Shadow Root with owned CSS and bundled browser-safe icons. It SHALL present settings as a page filling the area beside the navigation rail, not as a modal dialog. It SHALL provide a narrow-window layout, stable navigation dimensions, scrollable page content, owned light/dark palettes, and forced-colors system fallbacks without relying on Codex private React components, color variables, utility classes, or DOM styling. Its desktop visual structure SHALL keep a settings navigation column, content column, neutral navigation states, and grouped settings rows while retaining owned implementation and palettes.
 
 #### Scenario: Desktop-sized window opens settings
-- **WHEN** the dialog opens in a desktop-sized Renderer viewport
-- **THEN** navigation and content SHALL render as a stable two-column settings layout
-- **AND** dynamic page content SHALL scroll without resizing or shifting the dialog controls
+- **WHEN** settings opens in a desktop-sized Renderer viewport
+- **THEN** navigation and content SHALL render as a stable two-column settings layout filling the area to the right of the navigation rail
+- **AND** dynamic page content SHALL scroll without resizing or shifting the page controls
 
 #### Scenario: Native titlebar overlays the Renderer viewport
-- **WHEN** the browser exposes a nonzero `titlebar-area-height` environment value
-- **THEN** the dialog SHALL be centered in the remaining viewport below the titlebar and its height SHALL exclude that area at desktop and narrow widths
-- **AND** the backdrop SHALL start below the titlebar and the dialog SHALL be a non-draggable interaction region
-- **AND** environments without a titlebar overlay SHALL retain the existing viewport-centered layout
+- **WHEN** the navigation rail is visible
+- **THEN** the settings page SHALL start at the rail's top and right edges and fill the remaining viewport
+- **AND** the page SHALL be a non-draggable interaction region with no modal backdrop
+- **AND** a missing rail SHALL keep the page below the titlebar and across the viewport
 
 #### Scenario: Narrow window opens settings
 - **WHEN** available width cannot contain the two-column layout
@@ -74,12 +81,16 @@ The settings shell SHALL render inside an owned Shadow Root with owned CSS and b
 - **WHEN** Codex private color variables are absent, renamed, or semantically incompatible
 - **THEN** the shell SHALL remain legible using its owned palette or forced-colors system fallback
 
-### Requirement: Settings navigation and dialog lifecycle are accessible
-The settings trigger and dialog SHALL expose appropriate accessible names and state. Opening SHALL move focus into the dialog; Escape, the close icon, and an owned backdrop action SHALL close it; closing SHALL restore focus to the connected opener when possible. Navigation SHALL expose the active page and support keyboard activation without trapping focus after close.
+### Requirement: Settings navigation and page lifecycle are accessible
+The settings trigger and page SHALL expose appropriate accessible names and state. Opening SHALL move focus into the page; Escape and the close icon SHALL close it; choosing another navigation-rail destination SHALL close it; closing SHALL restore focus to the connected opener when possible. Navigation SHALL expose the active page and support keyboard activation without trapping focus after close.
 
 #### Scenario: Keyboard user opens and closes settings
 - **WHEN** the focused settings trigger is activated and the user later presses Escape
-- **THEN** the dialog SHALL close and focus SHALL return to that trigger when it remains connected
+- **THEN** the settings page SHALL close and focus SHALL return to that trigger when it remains connected
+
+#### Scenario: User leaves settings for another rail destination
+- **WHEN** settings is open and the user activates another navigation-rail destination
+- **THEN** the settings page SHALL close so that destination's page is visible
 
 #### Scenario: User changes page
 - **WHEN** the user activates another settings navigation item
@@ -87,11 +98,11 @@ The settings trigger and dialog SHALL expose appropriate accessible names and st
 - **AND** the page heading and content SHALL be replaced without opening another modal
 
 #### Scenario: Original trigger was removed
-- **WHEN** Codex replaces the application header before the dialog closes
+- **WHEN** Codex replaces the application header before settings closes
 - **THEN** close SHALL complete without focusing a disconnected element or throwing
 
 ### Requirement: Page asynchronous work is current and cancellable
-Each mounted page SHALL receive a page-scoped AbortSignal and a latest-result helper. Navigation, dialog close, page replacement, and shell disposal MUST abort the active page scope. Success and failure handlers MUST run only for the current request generation of the current mounted page.
+Each mounted page SHALL receive a page-scoped AbortSignal and a latest-result helper. Navigation, settings close, page replacement, and shell disposal MUST abort the active page scope. Success and failure handlers MUST run only for the current request generation of the current mounted page.
 
 #### Scenario: User navigates before a request resolves
 - **WHEN** an asynchronous operation from the previous page settles after another page becomes active
@@ -103,7 +114,7 @@ Each mounted page SHALL receive a page-scoped AbortSignal and a latest-result he
 - **THEN** only the second operation's current result SHALL be applied
 
 #### Scenario: Settings closes during a request
-- **WHEN** the dialog closes while its active page operation is pending
+- **WHEN** settings closes while its active page operation is pending
 - **THEN** the operation's page scope SHALL be aborted
 - **AND** a late success or failure SHALL be ignored
 
@@ -193,14 +204,14 @@ The settings sidebar SHALL display an interface-language selector with Automatic
 
 #### Scenario: User chooses English or Simplified Chinese
 - **WHEN** the user selects a supported explicit language and the bounded Codex setting write succeeds
-- **THEN** the dialog SHALL remain open using the selected owned catalog
+- **THEN** the settings page SHALL remain open using the selected owned catalog
 - **AND** the active settings page SHALL remain selected
 - **AND** the selector SHALL expose the confirmed explicit language
 
 #### Scenario: User chooses Automatic
 - **WHEN** the user selects Automatic and the bounded Codex setting write succeeds
 - **THEN** Renderer SHALL clear the explicit locale override with `null`
-- **AND** the open dialog SHALL use the newly resolved automatic language without resetting its active page
+- **AND** the open settings page SHALL use the newly resolved automatic language without resetting its active page
 
 #### Scenario: Language write is pending
 - **WHEN** a bounded locale setting update has not settled
@@ -211,10 +222,10 @@ The settings sidebar SHALL display an interface-language selector with Automatic
 - **WHEN** the fixed locale setting operation rejects, times out, or returns a malformed response
 - **THEN** the selector SHALL restore its prior confirmed selection
 - **AND** the shell SHALL show a localized accessible inline error
-- **AND** the existing dialog language and active page SHALL remain usable
+- **AND** the existing settings language and active page SHALL remain usable
 
 #### Scenario: Narrow settings window displays language control
-- **WHEN** the settings dialog uses its narrow layout
+- **WHEN** the settings page uses its narrow layout
 - **THEN** the language selector SHALL remain visible without overlapping horizontal navigation, page content, or the close control
 - **AND** it SHALL NOT introduce page-level horizontal overflow
 
@@ -242,6 +253,6 @@ The production settings registry SHALL expose one Updates page backed only by a 
 - **THEN** the Updates page SHALL show the terminal result and a retry action only for failure
 
 #### Scenario: Page closes during a check
-- **WHEN** the settings dialog closes or navigates away while check or status work is pending
+- **WHEN** the settings page closes or navigates away while check or status work is pending
 - **THEN** the page scope SHALL abort and late results SHALL NOT mutate another page
 

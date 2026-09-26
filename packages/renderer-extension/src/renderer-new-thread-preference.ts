@@ -14,6 +14,10 @@ import {
   type ExternalRendererAgent,
   type RendererAgent,
 } from "./agent-selection-state.js";
+import {
+  catalogModelForSelection,
+  modelRefForPickerId,
+} from "./renderer-model-configuration.js";
 
 export const RENDERER_NEW_THREAD_PREFERENCE_KEY = "codexhost.new-thread-preference.v1";
 
@@ -111,8 +115,9 @@ export function readNewThreadExternalConfigurationPreference(
 ): ExternalConfigurationPreference | undefined {
   const preference = readPreference(storage)?.externalByAgent[agent];
   if (!preference) return undefined;
-  const catalogModel = catalog.models.find(({ ref }) => ref.id === preference.model.id);
-  if (!catalogModel) return undefined;
+  const catalogModel = catalogModelForSelection(catalog, preference.model);
+  const model = modelRefForPickerId(catalog, preference.model.id);
+  if (!catalogModel || !model) return undefined;
   const thinkingOptionId =
     preference.thinkingOptionId &&
     catalogModel.supportedThinkingOptionIds?.includes(preference.thinkingOptionId)
@@ -124,7 +129,7 @@ export function readNewThreadExternalConfigurationPreference(
       ? preference.permissionModeId
       : undefined;
   return {
-    model: catalogModel.ref,
+    model,
     ...(thinkingOptionId ? { thinkingOptionId } : {}),
     ...(permissionModeId ? { permissionModeId } : {}),
   };

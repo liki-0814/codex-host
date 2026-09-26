@@ -1,6 +1,7 @@
 import {
   decodeHarnessPluginRoute,
   harnessIdSchema,
+  modelConfigurationBase,
   permissionModeFixedAtCreate,
   type HarnessCommandDescriptor,
   type HarnessModelCatalog,
@@ -72,6 +73,10 @@ import {
 import type { RendererModelClient } from "./renderer-model-client.js";
 import { RendererMethodUnavailableError } from "./renderer-request-sender.js";
 import { thinkingOptionsForModel } from "./renderer-model-picker.js";
+import {
+  catalogModelForSelection,
+  modelRefForPickerId,
+} from "./renderer-model-configuration.js";
 import { RENDERER_AGENT_INSTALL_URLS } from "./renderer-agent-picker.js";
 import {
   readClaudePermissionModePreference,
@@ -95,6 +100,8 @@ import {
   type RendererDelegationMentionControl,
 } from "./renderer-delegation-mention.js";
 import { RENDERER_AGENT_LABELS } from "./renderer-agent-icon.js";
+import { PI_EXTENSION_CHANGED } from "./settings/pi-permission-setup.js";
+import { MODEL_VISIBILITY_CHANGED } from "./renderer-model-visibility.js";
 import { openRendererThread } from "./renderer-fork-control.js";
 import type {
   RendererConnectionDiagnostics,
@@ -248,7 +255,7 @@ function isExternalConfigurationReadyView(
 ): boolean {
   return (
     modelView.status !== "selecting" &&
-    modelView.catalog?.models.some((model) => model.ref.id === modelView.selected?.id) === true &&
+    catalogModelForSelection(modelView.catalog, modelView.selected) !== undefined &&
     isPermissionModeControlReady(permissionModeView)
   );
 }
@@ -678,17 +685,20 @@ function catalogWithConfigurationState(
 ): HarnessModelCatalog {
   if (!state.availableThinkingOptions) return catalog;
   const supportedThinkingOptionIds = state.availableThinkingOptions.map(({ id }) => id);
+  const targetId = modelConfigurationBase(model).id;
   const models = catalog.models.map((candidate) => {
     const normalized = { ...candidate };
     delete normalized.supportedThinkingOptionIds;
-    return candidate.ref.id === model.id
+    return modelConfigurationBase(candidate.ref).id === targetId
       ? { ...normalized, supportedThinkingOptionIds }
       : normalized;
   });
   const normalized = {
     ...catalog,
     models,
-    defaultModel: model,
+    defaultModel:
+      catalog.models.find((candidate) => modelConfigurationBase(candidate.ref).id === targetId)
+        ?.ref ?? model,
     thinkingOptions: state.availableThinkingOptions,
   };
   if (state.effectiveThinkingOptionId) {
@@ -760,6 +770,22 @@ export function installRendererBindingProbe(
     getUpdateClient: () => modelControl,
     getAccountClient: () => modelControl,
     getConnectionDiagnostics: () => connectionDiagnostics,
+    getModelsClient: () => modelClientForHost(modelControl?.currentHostId?.() ?? "local"),
+    getSkillsClient: () => {
+      const client = modelClientForHost("local");
+      const inspectSkills = client?.inspectSkills;
+      const linkSkill = client?.linkSkill;
+      if (!inspectSkills || !linkSkill) return null;
+      return {
+        inspectSkills: () => inspectSkills.call(client),
+        linkSkill: (input) =>
+          linkSkill.call(client, {
+            skill: input.skill,
+            harnessId: harnessIdSchema.parse(input.harnessId),
+            action: input.action,
+          }),
+      };
+    },
     getLoadedSessionsClient: () => modelClientForHost("local"),
     getSessionImportClient: () => {
       const client = modelClientForHost("local");
@@ -1413,7 +1439,7 @@ export function installRendererBindingProbe(
       const previousModel = controller.modelForAgent(mounted.composer, agent);
       const previousModelAvailable =
         previousModel !== undefined &&
-        inspection.catalog.models.some((model) => model.ref.id === previousModel.id);
+        catalogModelForSelection(inspection.catalog, previousModel) !== undefined;
       const preferredConfiguration =
         current.phase === "draft" && !previousModelAvailable
           ? readNewThreadExternalConfigurationPreference(
@@ -1622,7 +1648,7 @@ export function installRendererBindingProbe(
     if (current.agent === "codex") return;
     const agent = current.agent;
     const catalog = mounted.modelView.catalog;
-    const selected = catalog?.models.find((model) => model.ref.id === modelId)?.ref;
+    const selected = catalog ? modelRefForPickerId(catalog, modelId) : undefined;
     if (!catalog || !selected || !modelControl) return;
     const previousModel = controller.modelForAgent(mounted.composer, agent);
     const previousThinking = controller.thinkingOptionForAgent(mounted.composer, agent);
@@ -1689,10 +1715,12 @@ export function installRendererBindingProbe(
         if (!state.effectiveModel) {
           throw new Error("External Harness did not confirm an effective Model");
         }
-        effectiveModel = state.effectiveModel;
-        if (!catalog.models.some((model) => model.ref.id === effectiveModel.id)) {
+        const confirmed = catalogModelForSelection(catalog, state.effectiveModel);
+        const requested = catalogModelForSelection(catalog, selected);
+        if (!confirmed || !requested || confirmed.ref.id !== requested.ref.id) {
           throw new Error("External Harness activated a Model outside the current catalog");
         }
+        effectiveModel = selected;
         effectiveThinkingOptionId = supportsThinkingSelection
           ? selectableThinkingOptionId(state)
           : undefined;
@@ -1912,7 +1940,7 @@ export function installRendererBindingProbe(
     const selectedThinkingOptionId = catalog?.thinkingOptions.find(
       ({ id }) => id === thinkingOptionId,
     )?.id;
-    const catalogModel = catalog?.models.find((candidate) => candidate.ref.id === model?.id);
+    const catalogModel = catalogModelForSelection(catalog, model);
     if (
       !mounted.modelView.thinkingSelectionSupported ||
       !catalog ||
@@ -2832,6 +2860,20 @@ export function installRendererBindingProbe(
       }
     }
   };
+  const onModelVisibilityChanged = (): void => {
+    for (const mounted of mountedByComposer.values()) renderMounted(mounted);
+  };
+  const onPiExtensionChanged = (): void => {
+    for (const mounted of mountedByComposer.values()) {
+      if (
+        controller.get(mounted.composer).agent === "pi" &&
+        !threadIdFromComposerModelTarget(mounted.modelTarget)
+      )
+        void loadExternalCatalog(mounted);
+    }
+  };
+  window.addEventListener(MODEL_VISIBILITY_CHANGED, onModelVisibilityChanged);
+  window.addEventListener(PI_EXTENSION_CHANGED, onPiExtensionChanged);
   window.addEventListener("codexhost:draft-prewarm-policy-changed", onHostRouteChange);
   window.addEventListener("codexhost:draft-workspace", onDraftWorkspace);
   window.addEventListener("codexhost:renderer-adapter-status", onAdapterStatus);
@@ -3014,6 +3056,8 @@ export function installRendererBindingProbe(
       document.removeEventListener("submit", onSubmit, true);
       document.removeEventListener("keydown", onKeyDown, true);
       document.removeEventListener("click", onClick, true);
+      window.removeEventListener(MODEL_VISIBILITY_CHANGED, onModelVisibilityChanged);
+      window.removeEventListener(PI_EXTENSION_CHANGED, onPiExtensionChanged);
       window.removeEventListener("codexhost:draft-prewarm-policy-changed", onHostRouteChange);
       window.removeEventListener("codexhost:draft-workspace", onDraftWorkspace);
       window.removeEventListener("codexhost:renderer-adapter-status", onAdapterStatus);

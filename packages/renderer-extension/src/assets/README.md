@@ -5,13 +5,15 @@ source and `codex-logo-transparent.png` is its white-background-free square
 variant. `codex-logo-bright.png` recolors that mark in the official bright
 Codex blue so it stays visible on dark surfaces.
 
-`codexhost-app-icon.svg` is the vector master of the codexhost brand icon: a
-light gray rounded tile with a charcoal C and central rounded square, padded to
-the macOS icon grid. It is the Renderer settings brand icon (settings header
-mark and the application-header settings trigger button).
-`crates/launcher/assets/codexhost.png` is a 1024px render of this SVG for macOS
-application and DMG icons. Windows application and installer icons use the
-multi-size `crates/launcher/assets/codexhost.ico` generated from that PNG.
+`codexhost-app-icon.svg` is the vector master of the codexhost application
+icon: a light gray rounded tile with a charcoal C and central rounded square,
+padded to the macOS icon grid. `crates/launcher/assets/codexhost.png` is a
+1024px render of this SVG for macOS application and DMG icons. Windows
+application and installer icons use the multi-size
+`crates/launcher/assets/codexhost.ico` generated from that PNG. The Renderer
+settings trigger draws that C as a line icon in the rail's idle color, and
+switches to the solid mark in the rail's selected color while settings is
+open. The settings header uses the line mark.
 
 `codex-agent.png` is the Codex App GA mark distributed with OpenAI's official
 `openai.chatgpt` VS Code extension. It is bundled as a data URL so the Renderer

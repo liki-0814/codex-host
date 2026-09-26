@@ -1,3 +1,17 @@
+import { fetchPiAccounts } from "./account-balance.js";
+import {
+  installPiFastExtension,
+  installedPiFastExtension,
+  piFastExtensionState,
+  piFastModels,
+  piFastValue,
+  withPiFast,
+} from "./pi-fast-extension.js";
+import {
+  installedPiPermissionExtension,
+  managePiPermissionExtension,
+  PI_PERMISSION_MODES,
+} from "./pi-permission-extension.js";
 import { createPiCredentialImports } from "./pi-credential-imports.js";
 import { persistEmptyPiSession, readPiEmptySessionConfiguration } from "./pi-empty-session.js";
 import { createTwoFilesPatch, parsePatch } from "diff";
@@ -15,6 +29,7 @@ import {
   type HarnessError,
   type HarnessInspection,
   type HarnessModelRef,
+  type HarnessPermissionModeId,
   type HarnessOutput,
   type HarnessResult,
   type HarnessSession,
@@ -62,6 +77,7 @@ import {
   hostInteractionIdSchema,
   hostItemIdSchema,
   hostTurnIdSchema,
+  readConfiguredModelRef,
   nativeCheckpointRefSchema,
   nativeSessionRefSchema,
   nativeTurnRefSchema,
@@ -141,6 +157,8 @@ export interface PiTurnTransport {
   fork(entryId: string): Promise<PiSessionState>;
   clone(): Promise<PiSessionState>;
   verifySessionCwd(expectedCwd: string): Promise<void>;
+  selectPermissionMode?(mode: string): Promise<void>;
+  selectFastMode?(enabled: boolean): Promise<void>;
   selectModel(model: PiNativeModelRef): Promise<PiSessionState>;
   selectThinkingOption(thinkingOptionId: HarnessThinkingOptionId): Promise<PiSessionState>;
   compact(
@@ -598,6 +616,10 @@ class PiHarnessSession implements HarnessSession {
   #transport: PiTurnTransport | null = null;
   #liveCommands: HarnessCommandCatalog = piCommandCatalog;
   #usage: HostUsage | null;
+  #supportsPermissions = false;
+  #permissionModeId: HarnessPermissionModeId | undefined;
+  #fastEnabled: boolean | undefined;
+  #fastModels: ReadonlySet<string> = new Set();
   #usageGeneration = 0;
   #usageRefreshSequence = 0;
 
@@ -611,6 +633,9 @@ class PiHarnessSession implements HarnessSession {
       thinkingOptionId?: HarnessThinkingOptionId;
       toolOutputLimit: number;
       supportsThinkingSelection: boolean;
+      supportsPermissions?: boolean;
+      permissionModeId?: HarnessPermissionModeId;
+      fastModels?: ReadonlySet<string>;
       startedTransport?: PiTurnTransport;
       startedThinkingLevels?: HarnessThinkingOptionId[] | null;
       initialUsage?: HostUsage | null;
@@ -623,11 +648,16 @@ class PiHarnessSession implements HarnessSession {
     this.#requestedModel = options.model;
     this.#requestedThinkingOptionId = options.thinkingOptionId;
     this.#toolOutputLimit = options.toolOutputLimit;
+    this.#supportsPermissions = options.supportsPermissions === true;
+    this.#permissionModeId =
+      options.permissionModeId ??
+      (this.#supportsPermissions ? PI_PERMISSION_MODES.defaultModeId : undefined);
+    this.#fastModels = options.fastModels ?? new Set();
     this.capabilities = {
       configuration: {
         selectModel: true,
         selectThinkingOption: options.supportsThinkingSelection,
-        selectPermissionMode: false,
+        selectPermissionMode: this.#supportsPermissions,
         permissionModeScope: "live",
       },
       history: { fork: true, forkAcrossCwd: true, rollbackLastTurn: true },
@@ -643,6 +673,8 @@ class PiHarnessSession implements HarnessSession {
       ? harnessStateFromPi(options.startedTransport.state, options.startedThinkingLevels ?? null)
       : {};
     this.initialUsage = options.initialUsage ?? null;
+    if (this.#permissionModeId)
+      this.initialState.effectivePermissionModeId = this.#permissionModeId;
     this.#usage = this.initialUsage;
     this.#state = this.initialState;
     this.outputs = this.#channel.outputs;
@@ -739,14 +771,40 @@ class PiHarnessSession implements HarnessSession {
     if (command.type === "model.select") return this.#selectModel(command);
     if (command.type === "thinking.select") return this.#selectThinking(command);
     if (command.type === "permissionMode.select") {
-      return {
-        ok: false,
-        error: {
-          code: "unsupported",
-          message: "Pi does not expose a selectable Permission Mode",
-          retryable: false,
-        },
-      };
+      if (!this.#supportsPermissions)
+        return {
+          ok: false,
+          error: {
+            code: "unsupported",
+            message: "Pi does not expose a selectable Permission Mode",
+            retryable: false,
+          },
+        };
+      const mode = PI_PERMISSION_MODES.modes.find((entry) => entry.id === command.permissionModeId);
+      if (!mode)
+        return {
+          ok: false,
+          error: {
+            code: "invalidRequest",
+            message: "Unknown Pi permission mode",
+            retryable: false,
+          },
+        };
+      const transport = this.#transport;
+      if (!transport?.selectPermissionMode)
+        return {
+          ok: false,
+          error: invalidState("Pi approval extension is unavailable until the Session starts"),
+        };
+      try {
+        await transport.selectPermissionMode(mode.id);
+        this.#permissionModeId = mode.id;
+        this.#state = { ...this.#state, effectivePermissionModeId: mode.id };
+        this.#event({ type: "session.state.changed", state: this.#state });
+        return { ok: true, value: { completed: true } };
+      } catch (error) {
+        return { ok: false, error: normalizedError(error, "nativeFailure") };
+      }
     }
     if (this.#acceptingTurn || this.#active || this.#configuring) {
       return {
@@ -955,7 +1013,7 @@ class PiHarnessSession implements HarnessSession {
     }
     let requested: PiNativeModelRef;
     try {
-      requested = decodePiModelRef(command.model);
+      requested = this.#nativeModel(command.model);
     } catch (error) {
       return { ok: false, error: normalizedError(error, "invalidRequest") };
     }
@@ -966,7 +1024,14 @@ class PiHarnessSession implements HarnessSession {
       let state: PiSessionState;
       let thinkingLevels: HarnessThinkingOptionId[] | null;
       try {
-        state = await transport.selectModel(requested);
+        const current = nativeModelFromState(transport.state);
+        // Fast on/off keeps the same native Model. Selecting it again must still
+        // apply the Fast flag; a repeated set_model is not what turns Fast off.
+        state =
+          current && samePiModel(current, requested)
+            ? transport.state
+            : await transport.selectModel(requested);
+        await this.#applyFast(transport, command.model);
         thinkingLevels = await transport.getAvailableThinkingLevels();
         this.#publishTransportState(state, thinkingLevels);
       } catch (error) {
@@ -1243,6 +1308,33 @@ class PiHarnessSession implements HarnessSession {
     }
   }
 
+  #nativeModel(ref: HarnessModelRef): PiNativeModelRef {
+    return decodePiModelRef(readConfiguredModelRef(ref)?.model ?? ref);
+  }
+
+  async #applyFast(transport: PiTurnTransport, ref: HarnessModelRef): Promise<void> {
+    const configured = readConfiguredModelRef(ref);
+    if (!configured && this.#fastEnabled !== true) return;
+    const enabled = configured ? piFastValue(ref, this.#fastModels) : false;
+    if (enabled === this.#fastEnabled) return;
+    if (!transport.selectFastMode) throw new Error("Pi Fast extension is unavailable");
+    await transport.selectFastMode(enabled);
+    this.#fastEnabled = enabled;
+  }
+
+  async #applyPermission(transport: PiTurnTransport): Promise<void> {
+    if (!this.#supportsPermissions || !this.#permissionModeId || !transport.selectPermissionMode)
+      return;
+    await transport.selectPermissionMode(this.#permissionModeId);
+  }
+
+  async activateInstalledExtensions(): Promise<void> {
+    const transport = this.#transport;
+    if (!transport) return;
+    if (this.#requestedModel) await this.#applyFast(transport, this.#requestedModel);
+    await this.#applyPermission(transport);
+  }
+
   async #ensureTransport(): Promise<PiTurnTransport> {
     if (this.#transport) return this.#transport;
     if (this.#starting) return this.#starting;
@@ -1258,9 +1350,10 @@ class PiHarnessSession implements HarnessSession {
         let state = transport.state;
         let thinkingLevels = await transport.getAvailableThinkingLevels();
         if (this.#requestedModel) {
-          const requested = decodePiModelRef(this.#requestedModel);
+          const requested = this.#nativeModel(this.#requestedModel);
           const current = nativeModelFromState(state);
           if (!samePiModel(current, requested)) state = await transport.selectModel(requested);
+          await this.#applyFast(transport, this.#requestedModel);
           thinkingLevels = await transport.getAvailableThinkingLevels();
           if (!samePiModel(nativeModelFromState(state), requested)) {
             this.#publishTransportState(state, thinkingLevels);
@@ -1278,6 +1371,7 @@ class PiHarnessSession implements HarnessSession {
           state = await transport.selectThinkingOption(this.#requestedThinkingOptionId);
           thinkingLevels = await transport.getAvailableThinkingLevels();
         }
+        await this.#applyPermission(transport);
         this.#transport = transport;
         this.#publishTransportState(state, thinkingLevels);
         this.#drainPendingAutonomousTurns(transport);
@@ -1427,7 +1521,10 @@ class PiHarnessSession implements HarnessSession {
     state: PiSessionState,
     thinkingLevels: readonly HarnessThinkingOptionId[] | null,
   ): void {
-    this.#state = harnessStateFromPi(state, thinkingLevels);
+    this.#state = {
+      ...harnessStateFromPi(state, thinkingLevels),
+      ...(this.#permissionModeId ? { effectivePermissionModeId: this.#permissionModeId } : {}),
+    };
     this.#event({ type: "session.state.changed", state: this.#state });
   }
 
@@ -2080,6 +2177,7 @@ export class PiAdapter implements HarnessAdapter {
   readonly #inspections = new Set<PiTurnTransport>();
   readonly #sessions = new Set<PiHarnessSession>();
   readonly #toolOutputLimit: number;
+  readonly #environment: NodeJS.ProcessEnv;
   #closePromise: Promise<void> | null = null;
   #thinkingSelectionSupported: boolean | null = null;
 
@@ -2103,9 +2201,52 @@ export class PiAdapter implements HarnessAdapter {
       remove: (name) => updateCatalog(imports.remove(name)),
     };
     this.#createTransport = dependencies.createTransport;
+    this.#environment = options.environment ?? process.env;
     this.#importIndex = new PiSessionImportIndex({ ...process.env, ...options.environment });
     this.#closeTimeoutMs = options.closeTimeoutMs ?? 2_000;
     this.#toolOutputLimit = options.toolOutputLimit ?? DEFAULT_TOOL_OUTPUT_LIMIT;
+  }
+
+  /** Pi itself holds no Account; this reports configured provider balances. */
+  async inspectAccounts() {
+    if (this.#closePromise) return [];
+    return fetchPiAccounts({ environment: this.#environment });
+  }
+
+  async inspectAccount() {
+    const accounts = await this.inspectAccounts();
+    return accounts[0] ?? null;
+  }
+
+  async extension(id: string, action: "inspect" | "install") {
+    if (id !== "permissions" && id !== "codex-fast") throw new Error("Unknown Pi extension");
+    let available = true;
+    if (id === "codex-fast") {
+      const inspection = await this.inspect({});
+      const supported = piFastModels(this.#environment);
+      available =
+        inspection.status === "ready" &&
+        inspection.catalog.models.some((model) => {
+          const native = decodePiModelRef(model.ref);
+          return native.provider === "openai-codex" && supported.has(native.id);
+        });
+      if (action === "install") {
+        if (!available) throw new Error("No available Pi Codex model advertises Fast support");
+        await installPiFastExtension(this.#environment);
+      }
+    } else if (action === "install") {
+      await managePiPermissionExtension(id, action, this.#environment);
+    }
+    if (action === "install") {
+      await Promise.allSettled(this.#inspectionInFlight.values());
+      this.#inspectionCache.clear();
+    }
+    return {
+      ...(id === "permissions"
+        ? await managePiPermissionExtension(id, "inspect", this.#environment)
+        : piFastExtensionState(this.#environment)),
+      ...(id === "codex-fast" ? { available } : {}),
+    };
   }
 
   #readImport<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<HarnessResult<T>> {
@@ -2171,21 +2312,26 @@ export class PiAdapter implements HarnessAdapter {
       stage = "capabilities";
       const thinkingLevels = await transport.getAvailableThinkingLevels();
       this.#thinkingSelectionSupported = thinkingLevels !== null;
-      const catalog = normalizePiModelCatalog(
+      const normalized = normalizePiModelCatalog(
         models,
         nativeModelFromState(transport.state),
         thinkingLevels,
         transport.state.thinkingLevel,
       );
+      const permissions = Boolean(installedPiPermissionExtension(this.#environment));
+      const catalog = installedPiFastExtension(this.#environment)
+        ? withPiFast(normalized, piFastModels(this.#environment))
+        : normalized;
       await transport.close();
       return {
         status: "ready",
         catalog,
+        ...(permissions ? { permissionModes: PI_PERMISSION_MODES } : {}),
         capabilities: {
           configuration: {
             selectModel: true,
             selectThinkingOption: thinkingLevels !== null,
-            selectPermissionMode: false,
+            selectPermissionMode: permissions,
             permissionModeScope: "live",
           },
           history: { fork: true, forkAcrossCwd: true, rollbackLastTurn: true },
@@ -2227,7 +2373,8 @@ export class PiAdapter implements HarnessAdapter {
       };
     }
     if (input.kind === "create") {
-      if (input.permissionModeId) {
+      const permissions = Boolean(installedPiPermissionExtension(this.#environment));
+      if (input.permissionModeId && !permissions) {
         return {
           ok: false,
           error: {
@@ -2237,9 +2384,22 @@ export class PiAdapter implements HarnessAdapter {
           },
         };
       }
+      if (
+        input.permissionModeId &&
+        !PI_PERMISSION_MODES.modes.some((mode) => mode.id === input.permissionModeId)
+      ) {
+        return {
+          ok: false,
+          error: {
+            code: "invalidRequest",
+            message: "Unknown Pi permission mode",
+            retryable: false,
+          },
+        };
+      }
       if (input.model) {
         try {
-          decodePiModelRef(input.model);
+          decodePiModelRef(readConfiguredModelRef(input.model)?.model ?? input.model);
         } catch (error) {
           return { ok: false, error: normalizedError(error, "invalidRequest") };
         }
@@ -2264,6 +2424,11 @@ export class PiAdapter implements HarnessAdapter {
           ...(input.model ? { model: input.model } : {}),
           ...(thinkingOptionId?.success ? { thinkingOptionId: thinkingOptionId.data } : {}),
           supportsThinkingSelection: this.#thinkingSelectionSupported === true,
+          supportsPermissions: permissions,
+          ...(input.permissionModeId ? { permissionModeId: input.permissionModeId } : {}),
+          fastModels: installedPiFastExtension(this.#environment)
+            ? piFastModels(this.#environment)
+            : new Set(),
         }),
       };
     }
@@ -2425,7 +2590,12 @@ export class PiAdapter implements HarnessAdapter {
         startedThinkingLevels,
         initialUsage,
         supportsThinkingSelection: startedThinkingLevels !== null,
+        supportsPermissions: Boolean(installedPiPermissionExtension(this.#environment)),
+        fastModels: installedPiFastExtension(this.#environment)
+          ? piFastModels(this.#environment)
+          : new Set(),
       });
+      await session.activateInstalledExtensions();
       return { ok: true, value: session };
     } catch (error) {
       await transport?.close().catch(() => undefined);
@@ -2440,6 +2610,9 @@ export class PiAdapter implements HarnessAdapter {
       model?: HarnessModelRef;
       thinkingOptionId?: HarnessThinkingOptionId;
       supportsThinkingSelection: boolean;
+      supportsPermissions?: boolean;
+      permissionModeId?: HarnessPermissionModeId;
+      fastModels?: ReadonlySet<string>;
       startedTransport?: PiTurnTransport;
       startedThinkingLevels?: HarnessThinkingOptionId[] | null;
       initialUsage?: HostUsage | null;
@@ -2461,6 +2634,9 @@ export class PiAdapter implements HarnessAdapter {
         ...(options.thinkingOptionId ? { thinkingOptionId: options.thinkingOptionId } : {}),
         toolOutputLimit: this.#toolOutputLimit,
         supportsThinkingSelection: options.supportsThinkingSelection,
+        ...(options.supportsPermissions ? { supportsPermissions: true } : {}),
+        ...(options.permissionModeId ? { permissionModeId: options.permissionModeId } : {}),
+        ...(options.fastModels ? { fastModels: options.fastModels } : {}),
         ...(options.startedTransport ? { startedTransport: options.startedTransport } : {}),
         ...(options.startedThinkingLevels !== undefined
           ? { startedThinkingLevels: options.startedThinkingLevels }

@@ -166,6 +166,16 @@ export function createAgentGroupPreferenceStore(
   };
 }
 
+/** Agents kept in the Connections “常用” list, in that list's order. “更多” stays out. */
+export function mainConnectionAgentOrder(
+  store: AgentGroupPreferenceStore,
+): readonly ExternalRendererAgent[] {
+  return store
+    .list()
+    .filter((entry) => entry.section === "main")
+    .map((entry) => entry.agent);
+}
+
 let sharedStore: AgentGroupPreferenceStore | null = null;
 
 /** Shared singleton so the Connections settings page and every Agent picker stay in sync. */

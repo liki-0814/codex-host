@@ -1,4 +1,5 @@
 import {
+  configuredModelRef,
   harnessModelCatalogSchema,
   harnessModelRefSchema,
   harnessPermissionModeCatalogSchema,
@@ -77,5 +78,35 @@ describe("Renderer new-Thread external configuration preference", () => {
     expect(
       readNewThreadExternalConfigurationPreference("grok", modelCatalog, permissionModes, storage),
     ).toEqual({ model, thinkingOptionId });
+  });
+
+  it("restores a Fast configuration when the catalog still advertises that choice", () => {
+    const storage = memoryStorage();
+    const fast = configuredModelRef(model, { fast: "true" });
+    const off = configuredModelRef(model, { fast: "false" });
+    const catalog = harnessModelCatalogSchema.parse({
+      ...modelCatalog,
+      models: [
+        {
+          ...modelCatalog.models[0],
+          configurationOptions: [
+            {
+              id: "fast",
+              label: "Fast",
+              currentValue: "false",
+              options: [
+                { value: "false", label: "Off", model: off },
+                { value: "true", label: "On", model: fast },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    writeNewThreadExternalConfigurationPreference("grok", fast, thinkingOptionId, undefined, storage);
+
+    expect(
+      readNewThreadExternalConfigurationPreference("grok", catalog, permissionModes, storage),
+    ).toEqual({ model: fast, thinkingOptionId });
   });
 });

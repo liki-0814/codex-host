@@ -108,6 +108,33 @@ describe("read-only Harness accounts", () => {
     expect(await inspectHarnessAccounts([native], [])).toEqual({ accounts: [] });
   });
 
+  it("keeps every billing source reported by one Harness", async () => {
+    const wallet = {
+      label: "qingge",
+      balance: { amount: 3, currency: "USD", label: "钱包余额" },
+    };
+    const other = {
+      label: "qingge-2",
+      balance: { amount: 1, currency: "USD", label: "钱包余额" },
+    };
+    const ready = Object.assign(adapter("pi"), {
+      inspectAccounts: async () => [wallet, other, { ...wallet, token: "must not escape" }],
+    });
+    const inspected = await inspectHarnessAccount(ready, []);
+    expect(inspected).toEqual({
+      harnessId: "pi",
+      harnessName: "pi",
+      account: wallet,
+      accounts: [wallet, other],
+    });
+    await expect(inspectHarnessAccounts([ready], [])).resolves.toEqual({
+      accounts: [
+        { ...wallet, harnessId: "pi", harnessName: "pi" },
+        { ...other, harnessId: "pi", harnessName: "pi" },
+      ],
+    });
+  });
+
   it("bounds unresponsive plugins and rejects malformed or secret-bearing snapshots", async () => {
     const hung = Object.assign(adapter("hung-agent"), {
       inspectAccount: () => new Promise<null>(() => undefined),

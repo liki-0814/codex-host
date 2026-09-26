@@ -1,8 +1,7 @@
 export const credentialImportEnglish = {
   column: "Use in Harness",
   sectionTitle: "Accounts in Pi",
-  sectionEmpty:
-    "No logins in Pi yet. Use the Pi mark on a Codex or Grok account above to import one.",
+  sectionEmpty: "No logins have been copied into Pi yet.",
   rowReimport: "Copy again",
   rowRemove: "Remove",
   othersTitle: "Pi's own logins",
@@ -38,7 +37,7 @@ export type CredentialImportMessages = typeof credentialImportEnglish;
 export const credentialImportChinese: CredentialImportMessages = {
   column: "用于 Harness",
   sectionTitle: "Pi 中的账号",
-  sectionEmpty: "Pi 中还没有登录。点击上方 Codex 或 Grok 账号行的 Pi 图标即可导入。",
+  sectionEmpty: "还没有复制到 Pi 的登录。",
   rowReimport: "重新导入",
   rowRemove: "移除",
   othersTitle: "Pi 自有配置",

@@ -9,6 +9,8 @@ import {
   createDefaultRendererSettingsPages,
   type RendererConnectionDiagnostics,
   type RendererCodexAccountClient,
+  type RendererModelsClient,
+  type RendererSkillsClient,
   type RendererUpdateClient,
 } from "./settings/pages.js";
 import type {
@@ -30,6 +32,8 @@ export interface RendererSettingsLifecycleOptions {
   getAccountClient?(): RendererCodexAccountClient | null;
   getSessionImportClient?(): RendererSessionImportClient | null;
   getLoadedSessionsClient?(): LoadedSessionsClient | null;
+  getModelsClient?(): RendererModelsClient | null;
+  getSkillsClient?(): RendererSkillsClient | null;
   openImportedThread?: RendererImportedThreadOpener;
   onLocaleChange?(locale: RendererSettingsLocale): void;
 }
@@ -77,8 +81,13 @@ export function installRendererSettingsLifecycle(
         if (!disposed && !signal.aborted) shell?.close();
       },
       options.getLoadedSessionsClient ?? (() => null),
+      options.getModelsClient ?? (() => null),
+      options.getSkillsClient ?? (() => null),
     );
     const nextShell = installRendererSettingsShell(definitions, messages, ownerWindow.document);
+    nextShell.root?.addEventListener("close", () => {
+      if (!disposed) trigger?.setSelected(false);
+    });
     const nextTrigger = installRendererSettingsHeaderTrigger({
       available: nextShell.supported,
       messages,
@@ -90,7 +99,8 @@ export function installRendererSettingsLifecycle(
           const currentOpener = opener.isConnected
             ? opener
             : (trigger?.root?.querySelector<HTMLButtonElement>("button") ?? undefined);
-          shell?.openSettings(currentOpener, pageId);
+          const opened = shell?.openSettings(currentOpener, pageId) ?? false;
+          trigger?.setSelected(opened);
         });
       },
     });
@@ -116,7 +126,7 @@ export function installRendererSettingsLifecycle(
 
     if (reopen) {
       const opener = mounted.trigger.root?.querySelector<HTMLButtonElement>("button") ?? undefined;
-      mounted.shell.openSettings(opener, activePageId);
+      mounted.trigger.setSelected(mounted.shell.openSettings(opener, activePageId));
     }
   };
 
