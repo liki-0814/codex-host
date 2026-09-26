@@ -18,9 +18,6 @@ import Info from "lucide/dist/esm/icons/info.mjs";
 import Languages from "lucide/dist/esm/icons/languages.mjs";
 import Network from "lucide/dist/esm/icons/network.mjs";
 import PlugZap from "lucide/dist/esm/icons/plug-zap.mjs";
-import Puzzle from "lucide/dist/esm/icons/puzzle.mjs";
-import Link from "lucide/dist/esm/icons/link.mjs";
-import Unlink from "lucide/dist/esm/icons/unlink.mjs";
 import RefreshCw from "lucide/dist/esm/icons/refresh-cw.mjs";
 import RotateCcw from "lucide/dist/esm/icons/rotate-ccw.mjs";
 import Route from "lucide/dist/esm/icons/route.mjs";
@@ -36,6 +33,8 @@ import CircleHelp from "lucide/dist/esm/icons/circle-question-mark.mjs";
 import X from "lucide/dist/esm/icons/x.mjs";
 import Users from "lucide/dist/esm/icons/users.mjs";
 import Plus from "lucide/dist/esm/icons/plus.mjs";
+import Puzzle from "lucide/dist/esm/icons/puzzle.mjs";
+import codexhostLogoUrl from "../assets/codexhost-app-icon.svg";
 
 export const RENDERER_SETTINGS_ICON_NAMES = [
   "settings",
@@ -48,6 +47,7 @@ export const RENDERER_SETTINGS_ICON_NAMES = [
   "session-import",
   "add",
   "model-pool",
+  "skills",
   "routes",
   "gateway",
   "updates",
@@ -73,9 +73,6 @@ export const RENDERER_SETTINGS_ICON_NAMES = [
   "search",
   "help",
   "ellipsis",
-  "skills",
-  "link",
-  "unlink",
 ] as const;
 
 export type RendererSettingsIconName = (typeof RENDERER_SETTINGS_ICON_NAMES)[number];
@@ -100,6 +97,7 @@ const iconNodes = {
   "session-import": FolderInput,
   add: Plus,
   "model-pool": Boxes,
+  skills: Puzzle,
   routes: Route,
   gateway: Network,
   updates: CircleArrowUp,
@@ -125,9 +123,6 @@ const iconNodes = {
   search: Search,
   help: CircleHelp,
   ellipsis: Ellipsis,
-  skills: Puzzle,
-  link: Link,
-  unlink: Unlink,
 } satisfies Record<RendererSettingsIconName, IconNode>;
 
 export function isRendererSettingsIconName(value: string): value is RendererSettingsIconName {
@@ -145,68 +140,49 @@ export function createRendererSettingsIcon(name: RendererSettingsIconName, size 
   return icon;
 }
 
-const SVG_NS = "http://www.w3.org/2000/svg";
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
-// 20px rail slot. The resting mark is a stroked C; selection swaps in the filled mark.
-const CODEXHOST_LINE_RING = "M 15.67 5.57 A 7.2 7.2 0 1 0 15.67 14.43";
-const CODEXHOST_SOLID_RING =
-  "M 16.30 5.07 A 8 8 0 1 0 16.30 14.93 L 15.04 13.94 A 6.4 6.4 0 1 1 15.04 6.06 Z";
-
-export function createRendererSettingsBrandIcon(size = 22): SVGSVGElement {
-  const icon = document.createElementNS(SVG_NS, "svg");
-  icon.setAttribute("viewBox", "0 0 20 20");
-  icon.setAttribute("fill", "none");
-  icon.setAttribute("aria-hidden", "true");
-  icon.setAttribute("focusable", "false");
-  icon.style.width = `${size}px`;
-  icon.style.height = `${size}px`;
-  icon.style.display = "block";
-  icon.classList.add("codexhost-settings-icon");
-
-  const line = document.createElementNS(SVG_NS, "g");
-  line.setAttribute("data-codexhost-mark", "line");
-  const lineRing = document.createElementNS(SVG_NS, "path");
-  lineRing.setAttribute("d", CODEXHOST_LINE_RING);
-  lineRing.setAttribute("fill", "none");
-  lineRing.setAttribute("stroke", "currentColor");
-  lineRing.setAttribute("stroke-width", "1.6");
-  lineRing.setAttribute("stroke-linecap", "round");
-  const lineSquare = document.createElementNS(SVG_NS, "rect");
-  lineSquare.setAttribute("x", "7.8");
-  lineSquare.setAttribute("y", "7.8");
-  lineSquare.setAttribute("width", "4.4");
-  lineSquare.setAttribute("height", "4.4");
-  lineSquare.setAttribute("rx", "1");
-  lineSquare.setAttribute("fill", "none");
-  lineSquare.setAttribute("stroke", "currentColor");
-  lineSquare.setAttribute("stroke-width", "1.6");
-  line.append(lineRing, lineSquare);
-
-  const solid = document.createElementNS(SVG_NS, "g");
-  solid.setAttribute("data-codexhost-mark", "solid");
-  solid.style.display = "none";
-  const solidRing = document.createElementNS(SVG_NS, "path");
-  solidRing.setAttribute("d", CODEXHOST_SOLID_RING);
-  solidRing.setAttribute("fill", "currentColor");
-  solidRing.setAttribute("stroke", "none");
-  const solidSquare = document.createElementNS(SVG_NS, "rect");
-  solidSquare.setAttribute("x", "7");
-  solidSquare.setAttribute("y", "7");
-  solidSquare.setAttribute("width", "6");
-  solidSquare.setAttribute("height", "6");
-  solidSquare.setAttribute("rx", "1.4");
-  solidSquare.setAttribute("fill", "currentColor");
-  solidSquare.setAttribute("stroke", "none");
-  solid.append(solidRing, solidSquare);
-
-  icon.append(line, solid);
-  return icon;
+/**
+ * Line brand mark in `currentColor` for native icon surfaces such as the rail:
+ * the app icon's open ring and core square without its plate. The ring is a
+ * little heavier than native strokes so the mark stays recognizable at 20px.
+ */
+export function createRendererSettingsBrandGlyph(size = 20): SVGElement {
+  const svg = document.createElementNS(SVG_NAMESPACE, "svg");
+  svg.setAttribute("viewBox", "12.8 12.2 40 40");
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  const ring = document.createElementNS(SVG_NAMESPACE, "path");
+  ring.setAttribute("d", "M 44.55 23.97 A 14.35 14.35 0 1 0 44.55 40.43");
+  ring.setAttribute("fill", "none");
+  ring.setAttribute("stroke", "currentColor");
+  ring.setAttribute("stroke-width", "4.4");
+  ring.setAttribute("stroke-linecap", "round");
+  const core = document.createElementNS(SVG_NAMESPACE, "rect");
+  core.setAttribute("x", "27.6");
+  core.setAttribute("y", "27");
+  core.setAttribute("width", "10.4");
+  core.setAttribute("height", "10.4");
+  core.setAttribute("rx", "2.4");
+  core.setAttribute("fill", "currentColor");
+  svg.append(ring, core);
+  svg.classList.add("codexhost-settings-icon");
+  return svg;
 }
 
-export function setRendererSettingsBrandIconSelected(icon: Element, selected: boolean): void {
-  if (typeof icon.querySelector !== "function") return;
-  const line = icon.querySelector('[data-codexhost-mark="line"]');
-  const solid = icon.querySelector('[data-codexhost-mark="solid"]');
-  if (line && "style" in line) (line as HTMLElement).style.display = selected ? "none" : "";
-  if (solid && "style" in solid) (solid as HTMLElement).style.display = selected ? "" : "none";
+export function createRendererSettingsBrandIcon(size = 22): HTMLImageElement {
+  const icon = document.createElement("img");
+  icon.src = codexhostLogoUrl;
+  icon.alt = "";
+  icon.width = size;
+  icon.height = size;
+  icon.draggable = false;
+  icon.setAttribute("aria-hidden", "true");
+  icon.style.width = `${size}px`;
+  icon.style.height = `${size}px`;
+  icon.style.objectFit = "contain";
+  icon.classList.add("codexhost-settings-icon");
+  return icon;
 }

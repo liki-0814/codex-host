@@ -19,8 +19,8 @@ import type {
 } from "./settings/session-import-page.js";
 import { installRendererSettingsShell, type RendererSettingsShell } from "./settings/shell.js";
 import {
-  installRendererSettingsHeaderTrigger,
-  type RendererSettingsHeaderTriggerControl,
+  installRendererSettingsRailTrigger,
+  type RendererSettingsRailTriggerControl,
 } from "./settings/trigger.js";
 
 const UPDATE_CHECK_TIMEOUT_MS = 5_000;
@@ -51,7 +51,7 @@ export function installRendererSettingsLifecycle(
   const lifecycleController = new AbortController();
   let locale = resolveRendererSettingsLocale(ownerWindow.navigator.languages);
   let shell: RendererSettingsShell | null = null;
-  let trigger: RendererSettingsHeaderTriggerControl | null = null;
+  let trigger: RendererSettingsRailTriggerControl | null = null;
   let localeRequest: Promise<void> | null = null;
   let checkedUpdateClient: RendererUpdateClient | null = null;
   let retryUpdateClient: RendererUpdateClient | null = null;
@@ -64,7 +64,7 @@ export function installRendererSettingsLifecycle(
 
   const mount = (): {
     shell: RendererSettingsShell;
-    trigger: RendererSettingsHeaderTriggerControl;
+    trigger: RendererSettingsRailTriggerControl;
   } => {
     const messages = rendererSettingsMessages(locale);
     const definitions = createDefaultRendererSettingsPages(
@@ -85,10 +85,7 @@ export function installRendererSettingsLifecycle(
       options.getSkillsClient ?? (() => null),
     );
     const nextShell = installRendererSettingsShell(definitions, messages, ownerWindow.document);
-    nextShell.root?.addEventListener("close", () => {
-      if (!disposed) trigger?.setSelected(false);
-    });
-    const nextTrigger = installRendererSettingsHeaderTrigger({
+    const nextTrigger = installRendererSettingsRailTrigger({
       available: nextShell.supported,
       messages,
       ownerDocument: ownerWindow.document,
@@ -99,8 +96,7 @@ export function installRendererSettingsLifecycle(
           const currentOpener = opener.isConnected
             ? opener
             : (trigger?.root?.querySelector<HTMLButtonElement>("button") ?? undefined);
-          const opened = shell?.openSettings(currentOpener, pageId) ?? false;
-          trigger?.setSelected(opened);
+          shell?.openSettings(currentOpener, pageId);
         });
       },
     });
@@ -126,7 +122,7 @@ export function installRendererSettingsLifecycle(
 
     if (reopen) {
       const opener = mounted.trigger.root?.querySelector<HTMLButtonElement>("button") ?? undefined;
-      mounted.trigger.setSelected(mounted.shell.openSettings(opener, activePageId));
+      mounted.shell.openSettings(opener, activePageId);
     }
   };
 
