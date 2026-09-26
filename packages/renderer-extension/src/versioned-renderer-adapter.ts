@@ -935,6 +935,13 @@ export function installCurrentRendererAdapter(): {
     if (!client) throw new Error("Renderer Model request manager is unavailable");
     return client;
   };
+  // Settings stays usable when no Composer is mounted. Account and catalog
+  // calls belong to the local Host, not the active draft.
+  const settingsModelClient = (): RendererModelClient => {
+    const local = disposed ? null : clients.forHost("local");
+    if (local) return local;
+    return currentModelClient();
+  };
   const modelControl: RendererModelClient = Object.freeze({
     currentHostId: () => {
       currentRequestRoute();
@@ -942,13 +949,33 @@ export function installCurrentRendererAdapter(): {
     },
     clientForHost: (hostId: string) => (disposed ? null : clients.forHost(hostId)),
     listHarnessPlugins: async () => {
-      const client = currentModelClient();
+      const client = settingsModelClient();
       if (!client.listHarnessPlugins) throw new Error("Harness plugin directory is unavailable");
       return client.listHarnessPlugins();
     },
+    installation: (input: Parameters<NonNullable<RendererModelClient["installation"]>>[0]) => {
+      const client = settingsModelClient();
+      if (!client.installation) throw new Error("Harness installation is unavailable");
+      return client.installation(input);
+    },
+    extension: (input: Parameters<NonNullable<RendererModelClient["extension"]>>[0]) => {
+      const client = settingsModelClient();
+      if (!client.extension) throw new Error("Extension installation is unavailable");
+      return client.extension(input);
+    },
+    inspectSkills: () => {
+      const client = settingsModelClient();
+      if (!client.inspectSkills) throw new Error("Skill catalog is unavailable");
+      return client.inspectSkills();
+    },
+    linkSkill: (input: Parameters<NonNullable<RendererModelClient["linkSkill"]>>[0]) => {
+      const client = settingsModelClient();
+      if (!client.linkSkill) throw new Error("Skill linking is unavailable");
+      return client.linkSkill(input);
+    },
     forkThread: (input: ExternalThreadForkParams) => currentModelClient().forkThread(input),
     inspectHarness: (...args: Parameters<RendererModelClient["inspectHarness"]>) =>
-      currentModelClient().inspectHarness(...args),
+      settingsModelClient().inspectHarness(...args),
     inspectThread: (input: ThreadInspectionParams) => currentModelClient().inspectThread(input),
     inspectHarnessCommands: (input: HarnessCommandsInspectParams) =>
       currentModelClient().inspectHarnessCommands(input),
@@ -968,18 +995,18 @@ export function installCurrentRendererAdapter(): {
       currentModelClient().selectThreadThinking(input),
     selectThreadPermissionMode: (input: ThreadPermissionModeSelectParams) =>
       currentModelClient().selectThreadPermissionMode(input),
-    checkUpdate: () => currentModelClient().checkUpdate(),
-    startUpdate: () => currentModelClient().startUpdate(),
-    readUpdateStatus: () => currentModelClient().readUpdateStatus(),
+    checkUpdate: () => settingsModelClient().checkUpdate(),
+    startUpdate: () => settingsModelClient().startUpdate(),
+    readUpdateStatus: () => settingsModelClient().readUpdateStatus(),
     inspectCodexAccountUsage: (
       input: Parameters<NonNullable<RendererModelClient["inspectCodexAccountUsage"]>>[0],
     ) => {
-      const client = currentModelClient();
+      const client = settingsModelClient();
       if (!client.inspectCodexAccountUsage) throw new Error("Codex Account Usage is unavailable");
       return client.inspectCodexAccountUsage(input);
     },
     listHarnessAccountSources: () => {
-      const client = currentModelClient();
+      const client = settingsModelClient();
       if (!client.listHarnessAccountSources) {
         throw new Error("Harness account source discovery is unavailable");
       }
@@ -988,7 +1015,7 @@ export function installCurrentRendererAdapter(): {
     inspectHarnessAccount: (
       input: Parameters<NonNullable<RendererModelClient["inspectHarnessAccount"]>>[0],
     ) => {
-      const client = currentModelClient();
+      const client = settingsModelClient();
       if (!client.inspectHarnessAccount) {
         throw new Error("Harness account inspection is unavailable");
       }
@@ -997,7 +1024,7 @@ export function installCurrentRendererAdapter(): {
     listHarnessAccounts: (
       input?: Parameters<NonNullable<RendererModelClient["listHarnessAccounts"]>>[0],
     ) => {
-      const client = currentModelClient();
+      const client = settingsModelClient();
       if (!client.listHarnessAccounts) throw new Error("Harness account inspection is unavailable");
       return client.listHarnessAccounts(input);
     },
@@ -1005,19 +1032,19 @@ export function installCurrentRendererAdapter(): {
       request: Parameters<NonNullable<RendererModelClient["credentialImports"]>>[0],
       targetHarnessId?: string,
     ) => {
-      const client = currentModelClient();
+      const client = settingsModelClient();
       if (!client.credentialImports) throw new Error("Credential imports are unavailable");
       return client.credentialImports(request, targetHarnessId);
     },
-    listCodexAccounts: () => currentModelClient().listCodexAccounts(),
+    listCodexAccounts: () => settingsModelClient().listCodexAccounts(),
     refreshCodexAccounts: () => {
-      const client = currentModelClient();
+      const client = settingsModelClient();
       return client.refreshCodexAccounts?.() ?? client.listCodexAccounts();
     },
     subscribeCodexAccounts: (
       listener: Parameters<NonNullable<RendererModelClient["subscribeCodexAccounts"]>>[0],
     ) => {
-      const client = currentModelClient();
+      const client = settingsModelClient();
       if (!client.subscribeCodexAccounts) throw new Error("Codex Account updates are unavailable");
       return client.subscribeCodexAccounts(listener);
     },
