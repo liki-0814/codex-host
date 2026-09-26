@@ -34,6 +34,7 @@ import X from "lucide/dist/esm/icons/x.mjs";
 import Users from "lucide/dist/esm/icons/users.mjs";
 import Plus from "lucide/dist/esm/icons/plus.mjs";
 import Puzzle from "lucide/dist/esm/icons/puzzle.mjs";
+import Link from "lucide/dist/esm/icons/link.mjs";
 import codexhostLogoUrl from "../assets/codexhost-app-icon.svg";
 
 export const RENDERER_SETTINGS_ICON_NAMES = [
@@ -48,6 +49,7 @@ export const RENDERER_SETTINGS_ICON_NAMES = [
   "add",
   "model-pool",
   "skills",
+  "link",
   "routes",
   "gateway",
   "updates",
@@ -98,6 +100,7 @@ const iconNodes = {
   add: Plus,
   "model-pool": Boxes,
   skills: Puzzle,
+  link: Link,
   routes: Route,
   gateway: Network,
   updates: CircleArrowUp,
