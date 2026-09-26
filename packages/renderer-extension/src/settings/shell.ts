@@ -19,7 +19,6 @@ export const SETTINGS_SHELL_ATTRIBUTE = "data-codexhost-settings-shell";
 export const RENDERER_SETTINGS_COLOR_SCHEME = "inherit";
 const NAVIGATION_RAIL_SELECTOR = '[data-app-navigation-rail="true"]';
 const NATIVE_RAIL_SELECTED_ATTRIBUTE = "data-selected";
-const NATIVE_RAIL_IDLE_ATTRIBUTE = "data-suppress-active-style";
 
 export interface RendererSettingsShell {
   readonly root: HTMLElement;
@@ -223,7 +222,6 @@ export function mountRendererSettingsShell(
   let pageOpen = false;
   let restoreNativeSelection = true;
   let suspendedRailSelection: { element: HTMLElement; selected: boolean; current: string | null }[] = [];
-  let suspendedActiveRailButtons: HTMLElement[] = [];
   let selectionObserver: MutationObserver | null = null;
   const focusActiveNavigation = (): void => {
     navigationButtons
@@ -264,24 +262,10 @@ export function mountRendererSettingsShell(
         !element.closest("[data-codexhost-settings-shell]") &&
         !element.closest("[data-codexhost-settings-trigger]"),
     );
-  const nativeRailDestinations = (): HTMLElement[] => {
-    const rail = ownerDocument.querySelector(NAVIGATION_RAIL_SELECTOR);
-    if (!rail) return [];
-    return [...rail.querySelectorAll<HTMLElement>("[data-sidebar-destination]")].filter(
-      (button) => !button.closest("[data-codexhost-settings-trigger]"),
-    );
-  };
   const clearNativeRailSelection = (): void => {
     for (const element of nativeSelectedElements()) {
       element.removeAttribute(NATIVE_RAIL_SELECTED_ATTRIBUTE);
       if (element.getAttribute("aria-current") === "page") element.removeAttribute("aria-current");
-    }
-    for (const button of nativeRailDestinations()) {
-      if (button.hasAttribute(NATIVE_RAIL_IDLE_ATTRIBUTE)) continue;
-      if (!suspendedActiveRailButtons.includes(button)) suspendedActiveRailButtons.push(button);
-      button.setAttribute(NATIVE_RAIL_IDLE_ATTRIBUTE, "");
-      button.style.color = "";
-      button.style.background = "";
     }
   };
   const suspendNativeRailSelection = (): void => {
@@ -301,27 +285,19 @@ export function mountRendererSettingsShell(
     selectionObserver.observe(root, {
       subtree: true,
       attributes: true,
-      attributeFilter: [NATIVE_RAIL_SELECTED_ATTRIBUTE, "aria-current", NATIVE_RAIL_IDLE_ATTRIBUTE],
+      attributeFilter: [NATIVE_RAIL_SELECTED_ATTRIBUTE, "aria-current"],
     });
   };
   const releaseNativeRailSelection = (restore: boolean): void => {
     selectionObserver?.disconnect();
     selectionObserver = null;
     const remembered = suspendedRailSelection;
-    const activeButtons = suspendedActiveRailButtons;
     suspendedRailSelection = [];
-    suspendedActiveRailButtons = [];
-    if (restore) {
-      for (const button of activeButtons) {
-        if (button.isConnected) button.removeAttribute(NATIVE_RAIL_IDLE_ATTRIBUTE);
-      }
-      if (nativeSelectedElements().length === 0) {
-        for (const { element, selected, current } of remembered) {
-          if (!element.isConnected) continue;
-          if (selected) element.setAttribute(NATIVE_RAIL_SELECTED_ATTRIBUTE, "");
-          if (current) element.setAttribute("aria-current", current);
-        }
-      }
+    if (!restore || nativeSelectedElements().length > 0) return;
+    for (const { element, selected, current } of remembered) {
+      if (!element.isConnected) continue;
+      if (selected) element.setAttribute(NATIVE_RAIL_SELECTED_ATTRIBUTE, "");
+      if (current) element.setAttribute("aria-current", current);
     }
   };
   const placeSurface = (): void => {

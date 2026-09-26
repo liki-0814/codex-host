@@ -198,16 +198,3 @@ async function fetchPiAccountBalance(input: {
     return null;
   }
 }
-
-export async function fetchPiAccount(
-  input: {
-    environment?: NodeJS.ProcessEnv;
-    signal?: AbortSignal;
-    fetch?: typeof fetch;
-    readApiKey?: () => Promise<string | undefined>;
-    readProviders?: () => Promise<readonly Sub2ApiProviderKey[]>;
-  } = {},
-): Promise<HarnessAccountSnapshot | null> {
-  const accounts = await fetchPiAccounts(input);
-  return accounts[0] ?? null;
-}
